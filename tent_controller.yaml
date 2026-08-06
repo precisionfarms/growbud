@@ -66,25 +66,10 @@ switch:
     name: Pump
     id: ${id_prefix}_pump_switch
     inverted: true
-        # Define the automation to run when the switch is turned off
-    # on_turn_off:
-    #   then:       
-    #     - component.update: ec_ezo
-    #     - lambda: |-
-    #         // The `id()` function accesses components by their ID.
-    #         float ec = id(ec_ezo).state;
-    #         ESP_LOGD("main", "Switch turned OFF. Current EC: %.2f", ec);
-        # Optional Step 3: Publish the new state to Home Assistant
-        # - homeassistant.service:
-        #     service: persistent_notification.create
-        #     data:
-        #       message: "Switch OFF. Current Temp: {{ '%.2f' | format(states('sensor.my_bme280_sensor_temperature')) }}"
-
   - platform: gpio
     pin: GPIO27
     id: ${id_prefix}_light_switch
     name: Lights
-    
 
 # Example configuration entry
 sensor:
