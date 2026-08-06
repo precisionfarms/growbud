@@ -69,7 +69,7 @@ switch:
   - platform: gpio
     pin: GPIO27
     id: ${id_prefix}_light_switch
-    name: Lights
+    name: Light Switch
 
 # Example configuration entry
 sensor:
