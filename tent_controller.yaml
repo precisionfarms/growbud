@@ -256,16 +256,16 @@ interval:
       - lambda: !lambda |-
           id(${id_prefix}_lights_timer);
   - interval: 1h
-      then:
-        - lambda: |-
-            auto now = id(ha_time).now();
-            if (!now.is_valid()) return;
+    then:
+      - lambda: |-
+          auto now = id(ha_time).now();
+          if (!now.is_valid()) return;
 
-            long current = now.timestamp;
-            
-            int days_since = (now.timestamp - timestamp)/86400;
-            
-            id(days_blooming)->publish_state(std::to_string(days_since));
+          long current = now.timestamp;
+          
+          int days_since = (now.timestamp - timestamp)/86400;
+          
+          id(days_blooming)->publish_state(std::to_string(days_since));
 
   - interval: 1min
     id: ${id_prefix}_lights_timer 
