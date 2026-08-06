@@ -229,11 +229,6 @@ interval:
     #       }else if(ph < id(ph_target).state){
     #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
     #       }    
-  - interval: 1min
-    id: ${id_prefix}_lights_timer 
-    then:
-      - lambda: !lambda |-
-          id(${id_prefix}_lights_timer);
 
   - interval: 1min
     id: ${id_prefix}_lights_timer 
