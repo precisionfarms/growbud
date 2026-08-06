@@ -755,11 +755,11 @@ script:
             id(${id_prefix}_pump_switch).turn_on();           
             ESP_LOGD("pump", "Pump running for %ld seconds.", pump_timer_duration);
             
+            auto next_run = current_timestamp + duration_seconds;    
+
             App.scheduler.set_timeout(nullptr, "turn_off_pump_job", pump_timer_duration * 1000, [=]() {
                 ESP_LOGD("pump", "Pump turned off automatically after %ld seconds.", pump_timer_duration);
                 id(${id_prefix}_pump_switch).turn_off();        
-
-                auto next_run = current_timestamp + duration_seconds;
                 
                 id(${id_prefix}_global_pump_run_time) = next_run;
                 
