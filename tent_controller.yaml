@@ -227,7 +227,46 @@ interval:
     #         ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
     #       }else if(ph < id(ph_target).state){
     #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
+    #       }
+interval:
+  - interval: 30min    
+    startup_delay: 
+      minutes: 20
+    id: ${id_prefix}_pump_timer 
+    then:
+    #   - switch.toggle: ${id_prefix}_pump_switch
+    #   - delay: 30s
+    #   - switch.turn_off: ${id_prefix}_pump_switch
+    #   - component.update: ph_ezo
+    #   - lambda: |-
+    #       id(ec_ezo).send_custom("R,600,true");
+    #   - delay: 1s
+    #   - lambda: !lambda |-
+    #       auto ph = id(ph_ezo).state;
+    #       auto target = id(ph_target).state;
+
+    #       if(ph > target){
+    #         ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
+    #       }else if(ph < id(ph_target).state){
+    #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
     #       }    
+  - interval: 1min
+    id: ${id_prefix}_lights_timer 
+    then:
+      - lambda: !lambda |-
+          id(${id_prefix}_lights_timer);
+  - interval: 1h
+      then:
+        - lambda: |-
+            auto now = id(ha_time).now();
+            if (!now.is_valid()) return;
+
+            long current = now.timestamp;
+            
+            int days_since = (now.timestamp - timestamp)/86400;
+            
+            id(days_blooming)->publish_state(std::to_string(days_since));
+
   - interval: 1min
     id: ${id_prefix}_lights_timer 
     then:
@@ -561,14 +600,11 @@ datetime:
               the_harvest_date->publish_state(formatted_time);   
 
               ESP_LOGD("main", "Bloom Start Date Day of Month: %s",  std::to_string(bloom_day));
-
              
             }
             else{
               the_harvest_date->publish_state(NULL);   
             }
-
-          
 
 select: 
   - platform: template
