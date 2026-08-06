@@ -255,6 +255,8 @@ interval:
     then:
       - lambda: !lambda |-
           id(${id_prefix}_lights_timer);
+  
+  
   - interval: 1h
     id: value_updates
     then:
