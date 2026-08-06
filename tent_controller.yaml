@@ -66,8 +66,10 @@ switch:
     name: Pump
     id: ${id_prefix}_pump_switch
     inverted: true
-  - platform: gpio
-    pin: GPIO27
+  - platform: gpio    
+    pin:
+      number: GPIO27
+      mode: OUTPUT
     id: ${id_prefix}_light_switch
     name: Lights
 
