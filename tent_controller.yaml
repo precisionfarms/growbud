@@ -1,0 +1,1185 @@
+i2c:
+  sda: GPIO18
+  scl: GPIO19
+  scan: true
+  id: bus_a
+  frequency: 100k
+  timeout: 
+    milliseconds: 15000
+      
+# esp32_ble_server:
+#   manufacturer: "Orange"
+#   manufacturer_data: [0x4C, 0, 0x23, 77, 0xF0 ]
+#   on_connect:
+#     - lambda: |-
+#         ESP_LOGD("BLE", "Connection from %d", id);
+#   on_disconnect:
+#     - lambda: |-
+#         ESP_LOGD("BLE", "Disconnection from %d", id);
+
+uart:
+  id: ec_uart
+  tx_pin: 22
+  rx_pin: 23
+  parity: NONE
+  stop_bits: 1
+  data_bits: 8
+  baud_rate: 9600
+globals:
+  - id: ${id_prefix}_my_global_int
+    type: int
+    restore_value: no
+  - id: lights_on_time
+    type: int
+    restore_value: yes   
+  - id: lights_off_time
+    type: int
+    restore_value: yes 
+  - id: harvest_date
+    type: int
+    restore_value: yes   
+  - id: bloom_date
+    type: int
+    restore_value: yes    
+  - id: ${id_prefix}_global_pump_run_time
+    type: int
+    restore_value: no     
+  - id: test_ec
+    type: float
+    restore_value: no
+  - id: ${id_prefix}_lights_on
+    type: bool
+    restore_value: yes
+    max_restore_data_length: 24
+    initial_value: "false"             
+  - id: last_ph_reading
+    type: float
+    restore_value: yes
+  - id: next_run_timestamp
+    type: long
+    restore_value: no
+    initial_value: '0'    
+# Example configuration entry
+switch:
+  - platform: gpio
+    pin: GPIO26
+    name: Pump
+    id: ${id_prefix}_pump_switch
+    inverted: true
+        # Define the automation to run when the switch is turned off
+    # on_turn_off:
+    #   then:       
+    #     - component.update: ec_ezo
+    #     - lambda: |-
+    #         // The `id()` function accesses components by their ID.
+    #         float ec = id(ec_ezo).state;
+    #         ESP_LOGD("main", "Switch turned OFF. Current EC: %.2f", ec);
+        # Optional Step 3: Publish the new state to Home Assistant
+        # - homeassistant.service:
+        #     service: persistent_notification.create
+        #     data:
+        #       message: "Switch OFF. Current Temp: {{ '%.2f' | format(states('sensor.my_bme280_sensor_temperature')) }}"
+
+  - platform: gpio
+    pin: GPIO27
+    id: ${id_prefix}_light_switch
+    name: Lights
+    
+
+# Example configuration entry
+sensor:
+  - platform: ezo
+    id: ph_ezo
+    address: 0x63
+    unit_of_measurement: "pH"
+    name: pH
+    accuracy_decimals: 2
+    update_interval: 24h
+    i2c_id: bus_a
+    on_value:
+      then:
+        - globals.set:
+            id: last_ph_reading
+            value: !lambda 'return x;'
+  - platform: ezo
+    id: ec_ezo
+    address: 0x64
+    # This is for the primary conductivity reading
+    update_interval: 3600s
+    i2c_id: bus_a
+    on_custom: 
+      then:
+        - lambda: !lambda |-
+            ESP_LOGD("custom", "Received custom response from EC sensor: %s", x.c_str());
+            std::string csv_string = x.c_str();
+            std::vector<std::string> parts;            
+            char * token;
+            char seps[] = ",";
+            token = strtok (&csv_string[0],seps);
+            while (token != NULL)
+            {
+              parts.push_back(token);
+              token = strtok (NULL, seps);
+            }
+            
+            id(ezo_ec_response).publish_state(csv_string);
+            auto test = id(test_ec);
+
+            // Publish the parsed values to the respective template sensors
+            if (parts.size() >= 4) {
+              float ec = parse_number<float>(parts[0]).value_or(0.0);
+
+              id(ec_value).publish_state(ec);
+
+              float tds = parse_number<float>(parts[1]).value_or(0.0);
+              id(tds_value).publish_state(tds);
+              
+              float salinity = parse_number<float>(parts[2]).value_or(0.0);
+              id(salinity_value).publish_state(salinity);
+
+              float sg = parse_number<float>(parts[3]).value_or(0.0);
+              id(sg_value).publish_state(sg);
+            }               
+  - platform: template
+    id: ec_value
+    name: ${name_prefix} Conductivity (EC)
+    unit_of_measurement: "µS/cm"
+    state_class: measurement    
+  - platform: template
+    id: tds_value
+    name: TDS
+    unit_of_measurement: "ppm"
+    state_class: measurement
+    icon: "mdi:antenna"
+  - platform: template
+    id: salinity_value
+    name: "Salinity"
+    unit_of_measurement: "psu"
+    state_class: measurement
+  - platform: template
+    id: sg_value
+    name: "Specific Gravity"
+    state_class: measurement  
+  - platform: template
+    name: "Last Stored pH"
+    id: last_stored_ph_sensor
+    unit_of_measurement: "pH"
+    accuracy_decimals: 2
+    lambda: 'return id(last_ph_reading);'
+    update_interval: 60s # Updates the dashboard entity every minute
+
+text_sensor:
+  - platform: template
+    name: "EZO EC Response"
+    id: ezo_ec_response 
+  - platform: template
+    name: "On Time"
+    id: the_on_time    
+  - platform: template
+    name: "Off Time"
+    id: the_off_time
+  - platform: template
+    name: "Next Pump Time"
+    id: next_pump_run_time    
+  - platform: template
+    name: "Harvest Date"
+    id: the_harvest_date
+  - platform: template
+    name: "Bloom Date"
+    id: the_bloom_date
+  - platform: template
+    name: "Days Blooming"
+    id: days_blooming    
+    
+time:
+  - platform: homeassistant    
+    id: ha_time
+    on_time:
+      # Every 1 minute
+      - seconds: 0
+        minutes: /1
+        then:
+          - script.execute: ${id_prefix}_script
+        
+
+# Example configuration entry
+    timezone: America/Denver
+
+# Example configuration entry
+interval:
+  - interval: 30min    
+    startup_delay: 
+      minutes: 20
+    id: ${id_prefix}_pump_timer 
+    then:
+    #   - switch.toggle: ${id_prefix}_pump_switch
+    #   - delay: 30s
+    #   - switch.turn_off: ${id_prefix}_pump_switch
+    #   - component.update: ph_ezo
+    #   - lambda: |-
+    #       id(ec_ezo).send_custom("R,600,true");
+    #   - delay: 1s
+    #   - lambda: !lambda |-
+    #       auto ph = id(ph_ezo).state;
+    #       auto target = id(ph_target).state;
+
+    #       if(ph > target){
+    #         ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
+    #       }else if(ph < id(ph_target).state){
+    #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
+    #       }
+interval:
+  - interval: 30min    
+    startup_delay: 
+      minutes: 20
+    id: ${id_prefix}_pump_timer 
+    then:
+    #   - switch.toggle: ${id_prefix}_pump_switch
+    #   - delay: 30s
+    #   - switch.turn_off: ${id_prefix}_pump_switch
+    #   - component.update: ph_ezo
+    #   - lambda: |-
+    #       id(ec_ezo).send_custom("R,600,true");
+    #   - delay: 1s
+    #   - lambda: !lambda |-
+    #       auto ph = id(ph_ezo).state;
+    #       auto target = id(ph_target).state;
+
+    #       if(ph > target){
+    #         ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
+    #       }else if(ph < id(ph_target).state){
+    #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
+    #       }    
+  - interval: 1min
+    id: ${id_prefix}_lights_timer 
+    then:
+      - lambda: !lambda |-
+          id(${id_prefix}_lights_timer);
+  - interval: 1h
+      then:
+        - lambda: |-
+            auto now = id(ha_time).now();
+            if (!now.is_valid()) return;
+
+            long current = now.timestamp;
+            
+            int days_since = (now.timestamp - timestamp)/86400;
+            
+            id(days_blooming)->publish_state(std::to_string(days_since));
+
+  - interval: 1min
+    id: ${id_prefix}_lights_timer 
+    then:
+      - lambda: !lambda |-
+          id(${id_prefix}_lights_timer);
+     
+  # - interval: 1min
+  #   then:
+  #     - script.execute: ${id_prefix}_script
+  # - interval: 1min
+  #   then:
+  #     - script.execute: ${id_prefix}_pump_script        
+
+
+number:
+  - platform: template
+    id: veg_transition
+    min_value: 0
+    max_value: 14
+    step: 1
+    name: Veg Transition
+    optimistic: yes
+    restore_value: True
+    on_value: 
+      then:
+        - lambda: |-
+            auto start_year = id(start_date).year;
+            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d %0d:%02d:%02d", id(start_date).year, id(start_date).month, id(start_date).day);
+            ESP_LOGD("main", "Updated hour is earlier than %u", start_year);
+  - platform: template
+    id: bloom_transition
+    min_value: 0
+    max_value: 14
+    step: 1
+    name: Bloom Transition
+    optimistic: yes  
+    restore_value: true
+  - platform: template    
+    id: days_in_veg
+    min_value: 1
+    max_value: 90
+    step: 1
+    initial_value: 30
+    name: Days in Veg
+    optimistic: yes
+    restore_value: True     
+    mode: BOX  
+    on_value: 
+      then:
+        - lambda: !lambda |-
+            auto year = id(start_date).year;
+            auto month = id(start_date).month;
+            auto day = id(start_date).day;
+            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d %0d:%02d:%02d",year, month, day);
+
+            if(year > 0){
+              std::tm my_time = {};
+              my_time.tm_year = year - 1900; // Years since 1900
+              my_time.tm_mon = month - 1;      // Months since January (0-11)
+              my_time.tm_mday = day;        // Day of the month (1-31)
+              my_time.tm_hour = 0;        // Hours since midnight (0-23)
+              my_time.tm_min = 0;         // Minutes after the hour (0-59)
+              my_time.tm_sec = 0;          // Seconds after the minute (0-59)
+              my_time.tm_isdst = -1;       // Let mktime determine if DST applies
+
+              int days_to_add = x; // Add 7 days
+              
+              const time_t ONE_DAY = 24 * 60 * 60;
+
+              time_t timestamp = mktime(&my_time) + (days_to_add * ONE_DAY);
+              
+              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
+              
+              ESP_LOGD("custom", "Timestamp: %s", formatted_time.c_str());  
+
+              ESP_LOGI("main", "My Time %u", my_time);   
+              id(bloom_date) = timestamp;
+              
+              the_bloom_date->publish_state(formatted_time);   
+              
+              year = esptime_local.year;
+              month = esptime_local.month;
+              day = esptime_local.day_of_month;
+
+              my_time.tm_year = year - 1900; // Years since 1900
+              my_time.tm_mon = month - 1;      // Months since January (0-11)
+              my_time.tm_mday = day;        // Day of the month (1-31)
+              my_time.tm_hour = 0;        // Hours since midnight (0-23)
+              my_time.tm_min = 0;         // Minutes after the hour (0-59)
+              my_time.tm_sec = 0;          // Seconds after the minute (0-59)
+              my_time.tm_isdst = -1;       // Let mktime determine if DST applies
+
+              days_to_add = id(days_in_bloom).state; // Add 7 days
+              
+              timestamp = mktime(&my_time) + (days_to_add * ONE_DAY);
+              
+              esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              formatted_time = esptime_local.strftime("%Y-%m-%d");
+              
+              ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
+          
+              the_harvest_date->publish_state(formatted_time);    
+
+              
+            }
+            else{
+              the_harvest_date->publish_state("");
+            }
+  
+  - platform: template    
+    id: days_in_bloom
+    min_value: 30
+    max_value: 90
+    step: 1
+    initial_value: 60
+    name: Days in Bloom
+    optimistic: yes
+    restore_value: True     
+    mode: BOX  
+    on_value: 
+      then:
+        - lambda: !lambda |-
+
+            if(start_date->year > 0){
+              auto bloom_timestamp = id(bloom_date);
+              ESPTime bloom_time = esphome::ESPTime::from_epoch_local(bloom_timestamp);
+              std::string formatted_time = bloom_time.strftime("%Y-%m-%d");
+
+              auto year = bloom_time.year;
+              auto month = bloom_time.month;
+              auto day = bloom_time.day_of_month;
+
+              ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d %0d:%02d:%02d", year, month, day);
+
+              std::tm my_time = {};
+              my_time.tm_year = year - 1900; // Years since 1900
+              my_time.tm_mon = month - 1;      // Months since January (0-11)
+              my_time.tm_mday = day;        // Day of the month (1-31)
+              my_time.tm_hour = 0;        // Hours since midnight (0-23)
+              my_time.tm_min = 0;         // Minutes after the hour (0-59)
+              my_time.tm_sec = 0;          // Seconds after the minute (0-59)
+              my_time.tm_isdst = -1;       // Let mktime determine if DST applies
+
+              int days_to_add = x; // Add 7 days
+              
+              const time_t ONE_DAY = 24 * 60 * 60;
+
+              time_t timestamp = mktime(&my_time) + (days_to_add * ONE_DAY);
+              
+              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              formatted_time = esptime_local.strftime("%Y-%m-%d");
+              
+              ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
+
+              ESP_LOGI("main", "My Time %", my_time); 
+              
+              auto off_time_widget = id(the_off_time);
+          
+              the_harvest_date->publish_state(formatted_time);              
+            }
+            else{
+              the_harvest_date->publish_state("");
+            }
+  
+  - platform: template    
+    id: ph_target
+    min_value: 1
+    max_value: 14
+    step: 0.1
+    initial_value: 6
+    name: "pH Target"
+    optimistic: yes
+    restore_value: true
+  - platform: template    
+    id: veg_lights_duration
+    mode: BOX
+    min_value: 1
+    max_value: 24
+    step: .5    
+    initial_value: 18
+    name: "Veg Light Duration"
+    optimistic: yes
+    restore_value: true
+  - platform: template    
+    id: bloom_lights_duration
+    mode: BOX
+    min_value: 1
+    max_value: 24
+    step: .5    
+    initial_value: 12
+    name: "Bloom Light Duration"
+    optimistic: yes   
+    restore_value: true
+  - platform: template    
+    id: lights_on_pump_interval
+    mode: BOX
+    min_value: 1
+    max_value: 60
+    step: 1    
+    initial_value: 20
+    name: "Lights On Pump Interval (min)"
+    optimistic: yes
+    restore_value: true
+  - platform: template    
+    id: lights_off_pump_interval
+    mode: BOX
+    min_value: 1
+    max_value: 60
+    step: 1    
+    initial_value: 60
+    name: "Lights Off Pump Interval (min)"
+    optimistic: yes
+    restore_value: true
+  - platform: template    
+    id: pump_duration
+    mode: BOX
+    min_value: 1
+    max_value: 300
+    step: 1    
+    initial_value: 60
+    name: "Pump Duration (sec)"
+    optimistic: yes
+    restore_value: true
+
+datetime:
+  # Example Date
+  - platform: template
+    id: start_date
+    type: date
+    name: Start Date
+    optimistic: yes
+    restore_value: true
+    on_value: 
+      then:
+         - lambda: !lambda |-  
+            ESPTime current_date = x;
+            if(!current_date.is_valid())
+              ESP_LOGD("custom", "Not Valid");  
+
+            uint8_t day_of_month = x.day_of_month;
+            uint8_t month = x.month;
+            uint16_t year = x.year;
+
+            if(year > 0){
+            
+              ESP_LOGD("main", "Day of Month: %s",  std::to_string(day_of_month)); 
+
+              std::tm my_time = {};
+              my_time.tm_year = year - 1900; // Years since 1900
+              my_time.tm_mon = month - 1;      // Months since January (0-11)
+              my_time.tm_mday = day_of_month;        // Day of the month (1-31)
+              my_time.tm_hour = 0;        // Hours since midnight (0-23)
+              my_time.tm_min = 0;         // Minutes after the hour (0-59)
+              my_time.tm_sec = 0;          // Seconds after the minute (0-59)
+              my_time.tm_isdst = -1;       // Let mktime determine if DST applies
+
+              //ESP_LOGD("main", "TEST: %s", id(days_in_veg).state);            
+              
+              uint32_t days_in_veg_val = id(days_in_veg).state;
+
+              if(id(days_in_veg).state > 0){  
+                ESP_LOGD("main", "TEST: %u", days_in_veg_val);            
+              }
+
+              int days_to_add = days_in_veg_val; // Add 7 days
+              
+              const time_t ONE_DAY = 24 * 60 * 60;
+
+              time_t timestamp = mktime(&my_time) + (days_to_add * ONE_DAY);
+              
+              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
+              
+              ESP_LOGD("custom", "Bloom Date Timestamp: %u", formatted_time);  
+              ESP_LOGD("custom", "Date: %s", current_date.strftime("%Y").c_str());     
+              ESP_LOGD("main", "Updated month: %u", month);
+
+              if (x.month >= 8) {
+                ESP_LOGD("main", "Updated hour is later or equal to 8");
+                
+              } else {
+                ESP_LOGD("main", "Updated hour is earlier than 8");
+              }
+              
+              id(bloom_date) = timestamp;
+              //id(the_bloom_date).state = formatted_time;
+                          
+              the_bloom_date->publish_state(formatted_time);              
+
+              auto now = id(ha_time).now();
+              
+              int days_since = (now.timestamp - timestamp)/86400;
+              
+              id(days_blooming)->publish_state(std::to_string(days_since));
+              
+              uint8_t bloom_day = esptime_local.day_of_month;
+              uint8_t bloom_month = esptime_local.month;
+              uint16_t bloom_year = esptime_local.year;
+
+              ESP_LOGD("main", "Bloom Year: %u", bloom_year);
+              ESP_LOGD("main", "Bloom Month: %u", bloom_month);
+              ESP_LOGD("main", "Bloom Day: %u", bloom_day);
+
+              my_time = {};
+              my_time.tm_year = bloom_year - 1900; // Years since 1900
+              my_time.tm_mon = bloom_month - 1;      // Months since January (0-11)
+              my_time.tm_mday = bloom_day;        // Day of the month (1-31)
+              my_time.tm_hour = 0;        // Hours since midnight (0-23)
+              my_time.tm_min = 0;         // Minutes after the hour (0-59)
+              my_time.tm_sec = 0;          // Seconds after the minute (0-59)
+              my_time.tm_isdst = -1;       // Let mktime determine if DST applies
+
+              days_to_add = id(days_in_bloom).state; // Add 7 days
+              
+              //const time_t ONE_DAY = 24 * 60 * 60;
+
+              timestamp = mktime(&my_time) + (days_to_add * ONE_DAY);
+              
+              esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              formatted_time = esptime_local.strftime("%Y-%m-%d");
+              
+              ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
+
+              ESP_LOGI("main", "My Time %u", my_time);   
+
+              ESP_LOGI("custom", "ESPTime Local: %d", esptime_local); // esptime_local is an ESPTime struct
+                
+              auto off_time_widget = id(the_off_time);
+          
+              the_harvest_date->publish_state(formatted_time);   
+
+              ESP_LOGD("main", "Bloom Start Date Day of Month: %s",  std::to_string(bloom_day));
+             
+            }
+            else{
+              the_harvest_date->publish_state(NULL);   
+            }
+
+select: 
+  - platform: template
+    id: select_lights_on_time
+    name: "Lights On Time"
+    restore_value: true
+    optimistic: true
+    options:
+      - '00:00'
+      - '01:00'
+      - '02:00'
+      - '03:00'
+      - '04:00'
+      - '05:00'
+      - '06:00'
+      - '07:00'
+      - '08:00'
+      - '09:00'
+      - '10:00'
+      - '11:00'
+      - '12:00'
+      - '13:00'
+      - '14:00'
+      - '15:00'
+      - '16:00'
+      - '17:00'
+      - '18:00'
+      - '19:00'
+      - '20:00'
+      - '21:00'
+      - '22:00'
+      - '23:00'
+    on_value:
+      then:
+        - lambda: |-
+            id(${id_prefix}_lights_script).execute();
+  - platform: template
+    id: bloom_lights_on_time
+    name: "Bloom Lights On Time"
+    restore_value: true
+    optimistic: true
+    options:
+      - '00:00'
+      - '01:00'
+      - '02:00'
+      - '03:00'
+      - '04:00'
+      - '05:00'
+      - '06:00'
+      - '07:00'
+      - '08:00'
+      - '09:00'
+      - '10:00'
+      - '11:00'
+      - '12:00'
+      - '13:00'
+      - '14:00'
+      - '15:00'
+      - '16:00'
+      - '17:00'
+      - '18:00'
+      - '19:00'
+      - '20:00'
+      - '21:00'
+      - '22:00'
+      - '23:00'
+    on_value:
+      then:
+        - lambda: |-
+            id(${id_prefix}_lights_script).execute();
+ 
+            
+button:  
+  - platform: template
+    name: "Calibrate pH Mid"
+    on_press:
+      then:
+        - lambda: id(ph_ezo).send_custom("Cal,mid,7.00"); // Sends a custom calibration command
+  - platform: template
+    name: "Calibrate pH High"
+    id: calibrate_ph_high
+    on_press:
+      then:
+        - lambda: id(ph_ezo).send_custom("Cal,high,10.00"); // Sends a custom calibration command        
+  - platform: template
+    name: "Read Conductivity"
+    id: 'read_conductivity'
+    on_press:
+      then:
+        - lambda: |-
+            id(ec_ezo).send_custom("R,600,true"); // Uses the state of the RTD sensor to set pH temperature compensation
+  - platform: template
+    name: "Read pH"
+    id: 'read_ph'
+    on_press:
+      then:
+        - component.update: ph_ezo       
+  - platform: template
+    name: "UART to I2C"
+    id: 'uart_command'
+    on_press:
+      then:
+        - uart.write:
+            id: ec_uart
+            data: "I2C,100 \r\n" 
+  - platform: template
+    name: "I2C"
+    id: 'i2c_command'
+    on_press:
+      - lambda: !lambda |-
+            id(ec_ezo).send_custom("Baud,9600"); // Uses the state of the RTD sensor to set pH temperature compensation  
+
+
+script:
+  - id: ${id_prefix}_script2
+    then:
+      lambda: !lambda |-
+        int hour = id(ha_time).now().hour;
+        int minute = id(ha_time).now().minute;
+  - id: ${id_prefix}_pump_script
+    then:
+      lambda: !lambda |-
+        auto now = id(ha_time).now();  
+        auto current_timestamp = now.timestamp; 
+        
+        ESP_LOGW("pump", "PUMP TIMESTAMP: %ld", (long) current_timestamp);
+        
+        auto current_run_time = id(${id_prefix}_global_pump_run_time);
+        ESP_LOGW("pump", "PUMP RUN TIME: %ld", (long) current_run_time);
+        
+        // Determine interval duration
+        int duration_minutes = id(lights_off_pump_interval).state;
+        if (id(${id_prefix}_light_switch).state) {
+          ESP_LOGI("pump", "Light switch is ON");
+          duration_minutes = id(lights_on_pump_interval).state;
+          
+        } else {
+          ESP_LOGI("pump", "Light switch is OFF");
+        }
+        
+        int duration_seconds = duration_minutes * 60;
+
+        // Initialize global run time if unset
+        if (current_run_time == 0) {
+          ESP_LOGD("pump", "Current run time is 0. Initializing next run time...");
+          current_run_time = current_timestamp + duration_seconds;
+          id(${id_prefix}_global_pump_run_time) = current_run_time;
+
+          esphome::ESPTime next_esptime = esphome::ESPTime::from_epoch_local(current_run_time);                
+          char next_formatted[32];
+          next_esptime.strftime(next_formatted, sizeof(next_formatted), "%Y-%m-%d %I:%M %p");
+  
+          id(next_pump_run_time).publish_state(next_formatted);
+        }
+        else{
+          //current_run_time = current_timestamp + duration_seconds;
+        }
+             
+        // Format string for Next Pump Run Time
+        esphome::ESPTime esptime_local = esphome::ESPTime::from_epoch_local(current_run_time);
+        char formatted_time[32];
+        esptime_local.strftime(formatted_time, sizeof(formatted_time), "%Y-%m-%d %I:%M %p");
+
+        // Update text sensor on boot / initial calculation
+        if (!id(next_pump_run_time).has_state()) {
+            id(next_pump_run_time).publish_state(formatted_time);
+            ESP_LOGI("pump", "Initial text sensor value set: %s", formatted_time);
+        }  
+        
+        ESP_LOGD("pump", "The next pump time is: %s", formatted_time);
+        
+        long pump_timer_duration = id(pump_duration).state;
+          
+        // Trigger pump execution
+        if (current_timestamp >= current_run_time && !id(${id_prefix}_pump_switch).state) {
+            id(${id_prefix}_pump_switch).turn_on();           
+            ESP_LOGD("pump", "Pump running for %ld seconds.", pump_timer_duration);
+            
+            App.scheduler.set_timeout(nullptr, "turn_off_pump_job", pump_timer_duration * 1000, [=]() {
+                ESP_LOGD("pump", "Pump turned off automatically after %ld seconds.", pump_timer_duration);
+                id(${id_prefix}_pump_switch).turn_off();        
+
+                auto next_run = current_timestamp + duration_seconds;
+                
+                id(${id_prefix}_global_pump_run_time) = next_run;
+                
+                esphome::ESPTime next_esptime = esphome::ESPTime::from_epoch_local(next_run);                
+                char next_formatted[32];
+                next_esptime.strftime(next_formatted, sizeof(next_formatted), "%Y-%m-%d %I:%M %p");
+        
+                id(next_pump_run_time).publish_state(next_formatted);
+
+                ESP_LOGD("pump", "Setting next pump time to: %s", formatted_time);
+                
+                id(ph_ezo).send_custom("R");
+                auto ph = id(ph_ezo).state;
+                auto target = id(ph_target).state;
+                
+                if(ph > target){
+                  ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
+                }
+                else if(ph < id(ph_target).state)
+                {                                
+                  ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);                 
+                }                   
+                
+            });
+        }
+                
+  - id: ${id_prefix}_lights_script
+    then:
+      lambda: !lambda |-
+      
+        auto now = id(ha_time).now();
+        
+        int year = now.year;
+        int hour = now.hour;
+        int month = now.month;
+        int day_of_month = now.day_of_month;
+        //int lightsOnHour = id(lights_on_hour).state;
+        auto lightsOnTime = id(select_lights_on_time).current_option();
+        
+        ESP_LOGI("lights", "LIGHTS ON TIME SELECT: %s", lightsOnTime);
+
+        int minute = now.minute;
+        auto the_time = now.timestamp;
+        auto veg_duration = id(veg_lights_duration).state;
+        auto bloom_duration = id(bloom_lights_duration).state;
+         
+        int lights_duration = veg_duration;
+
+        auto bloom_timestamp = id(bloom_date);
+        
+        ESP_LOGI("lights", "BLOOM TIMESTAMP: %u", bloom_timestamp);
+
+        bool is_blooming = false;                       
+
+        std::string s = lightsOnTime;
+        std::string delimiter = ":";
+        std::string token = s.substr(0, s.find(delimiter));
+
+        auto startHour = std::stoi(token);
+
+        ESP_LOGI("lights", "START HOUR: %u", startHour);
+
+        auto light_time = id(ha_time).now();
+
+        light_time.hour = startHour;
+        light_time.minute = 0;
+        light_time.second = 0;
+        
+        light_time.recalc_timestamp_utc(true);
+        
+        ESP_LOGI("time", "timestamp = %ld", (long)light_time.timestamp);
+
+        //ESP_LOGI("custom", "BLOOM START DATE: %d", bloom_time);
+        //ESP_LOGD("script", "The current bloom_start_date is: %u", id(bloom_start_date));
+        
+        if(the_time > bloom_timestamp){
+          is_blooming = true;
+          lights_duration = bloom_duration;              
+        }
+        else{
+          is_blooming = false;
+          lights_duration = veg_duration;            
+        }
+         
+        auto esptime_local = id(ha_time).now();
+        esptime_local.year = year;
+        esptime_local.month = month;
+        esptime_local.day_of_month = day_of_month;
+        esptime_local.hour = startHour;
+        esptime_local.minute = 0;
+        esptime_local.second = 0;
+        esptime_local.recalc_timestamp_utc(false);
+        char formatted_time_test[32];
+        esptime_local.strftime(formatted_time_test, sizeof(formatted_time_test), "%Y-%m-%d %l:%M%p");
+        
+        ESP_LOGD("lights", "timestamp = %ld", (long)esptime_local.timestamp);
+        ESP_LOGD("lights", "The ON is: %s", formatted_time_test); 
+        
+        
+        // Recalculate internal derived fields, including timestamp
+
+        // Set up standard C struct tm
+        struct tm t = {};
+        t.tm_year = year - 1900; // Years since 1900 (e.g. 2026 - 1900 = 126)
+        t.tm_mon  = month - 1;   // Months 0-11 (e.g. August = 7)
+        t.tm_mday = day_of_month;
+        t.tm_hour = startHour;
+        t.tm_min  = 0;
+        t.tm_sec  = 0;
+        t.tm_isdst = -1;         // -1 lets system determine daylight saving time automatically
+        
+        // Convert struct tm to Unix timestamp (seconds since 1970)
+        time_t timestamp = mktime(&t);
+
+        ESP_LOGI("time", "lights_on timestamp = %ld", (long)id(lights_on_time));
+
+        ESPTime utc = ESPTime::from_epoch_utc(id(lights_on_time));
+        ESPTime local = ESPTime::from_epoch_local(id(lights_on_time));
+        
+        char b1[32], b2[32];
+        
+        utc.strftime(b1, sizeof(b1), "%Y-%m-%d %H:%M:%S");
+        local.strftime(b2, sizeof(b2), "%Y-%m-%d %H:%M:%S");
+        
+        ESP_LOGI("time", "lights_on UTC   = %s", b1);
+        ESP_LOGI("time", "lights_on LOCAL = %s", b2);
+
+        // 1. Raw UTC interpretation (No timezone shift applied)
+        esphome::ESPTime esptime_utc = esphome::ESPTime::from_epoch_utc(timestamp);
+        char str_utc[32];
+        esptime_utc.strftime(str_utc, sizeof(str_utc), "%Y-%m-%d %l:%M%p");
+        ESP_LOGI("lights", "UTC Interpretation:   %s", str_utc);
+        
+        // 2. Local interpretation (Applies configured YAML timezone)
+        esphome::ESPTime esptime_local1 = esphome::ESPTime::from_epoch_local(timestamp);
+        char str_local[32];
+        
+        esptime_local1.strftime(str_local, sizeof(str_local), "%Y-%m-%d %l:%M%p");
+        ESP_LOGI("lights", "Local Interpretation: %s", str_local);
+
+        ESP_LOGI("lights", "LIGHTS ON TIME: %ld", (long)timestamp);        
+
+        esphome::ESPTime local_esptime = esphome::ESPTime::from_epoch_local(timestamp);
+        
+        // 3. Format into a local time string
+        char formatted_local_time[32];
+        local_esptime.strftime(formatted_local_time, sizeof(formatted_local_time), "%Y-%m-%d %l:%M%p");
+        
+        ESP_LOGI("lights", "Local Time: %s", formatted_local_time);    
+        
+        //timestamp = esptime_local.timestamp;
+        
+        id(lights_on_time) = timestamp;
+
+        ESP_LOGI("lights", "LIGHTS ON TIME: %u", id(lights_on_time));
+
+        esptime_local = esphome::ESPTime::from_epoch_utc(id(lights_on_time));
+        auto formatted_time = esptime_local.strftime("%Y-%m-%d %l:%M%p");  
+        
+        auto on_time_widget = id(the_on_time);
+        on_time_widget->publish_state(formatted_time);
+
+        ESP_LOGI("custom", "On Time Widget: %s", on_time_widget->state.c_str());
+        ESP_LOGI("custom", "On Time: %s", formatted_time.c_str());        
+        
+        t.tm_year = year - 1900; // Years since 1900 (e.g. 2026 - 1900 = 126)
+        t.tm_mon  = month - 1;   // Months 0-11 (e.g. August = 7)
+        t.tm_mday = day_of_month;
+        t.tm_hour = startHour + lights_duration;
+        t.tm_min  = 0;
+        t.tm_sec  = 0;
+        t.tm_isdst = -1;         // -1 lets system determine daylight saving time automatically
+        
+        // Convert struct tm to Unix timestamp (seconds since 1970)
+        timestamp = mktime(&t);
+        
+        id(lights_off_time) = timestamp;
+               
+        ESP_LOGI("lights", "LIGHTS OFF TIME: %u", id(lights_off_time));  
+        
+        esptime_local = esphome::ESPTime::from_epoch_utc(id(lights_off_time));
+        formatted_time = esptime_local.strftime("%Y-%m-%d %l:%M%p");         
+        
+        auto off_time_widget = id(the_off_time);
+        off_time_widget->publish_state(formatted_time);
+
+        ESP_LOGI("custom", "Off Time: %s", formatted_time.c_str());           
+
+  - id: ${id_prefix}_script
+    then:
+      lambda: !lambda |-     
+      
+        auto now = id(ha_time).now();
+        auto utcnow = id(ha_time).utcnow();
+        
+        auto current_time = now.timestamp;
+        auto current_time_utc = utcnow.timestamp;
+
+        ESP_LOGI("time", "now.hour      = %d", now.hour);
+        ESP_LOGI("time", "utc.hour      = %d", utcnow.hour);
+
+        ESP_LOGI("time", "now.timestamp = %ld", (long)now.timestamp);
+        ESP_LOGI("time", "utc.timestamp = %ld", (long)utcnow.timestamp);
+
+        ESPTime test1 = ESPTime::from_epoch_utc(now.timestamp);
+        ESPTime test2 = ESPTime::from_epoch_local(now.timestamp);
+        
+        char b1[32];
+        char b2[32];
+        
+        test1.strftime(b1, sizeof(b1), "%Y-%m-%d %H:%M:%S");
+        test2.strftime(b2, sizeof(b2), "%Y-%m-%d %H:%M:%S");
+        
+        ESP_LOGI("time", "now.hour=%d", now.hour);
+        ESP_LOGI("time", "UTC   = %s", b1);
+        ESP_LOGI("time", "LOCAL = %s", b2);
+
+        int year = now.year;
+        int hour = now.hour;
+        int month = now.month;
+        int day_of_month = now.day_of_month;
+
+        struct tm t = {};
+        t.tm_year = year - 1900; // Years since 1900 (e.g. 2026 - 1900 = 126)
+        t.tm_mon  = month - 1;   // Months 0-11 (e.g. August = 7)
+        t.tm_mday = day_of_month;
+        t.tm_hour = hour;
+        t.tm_min  = now.minute;
+        t.tm_sec  = now.second;
+        t.tm_isdst = -1;         // -1 lets system determine daylight saving time automatically
+           
+        auto timestamp = mktime(&t);
+
+        ESP_LOGW("script", "The timestamp is: %u", timestamp);
+        ESP_LOGW("script", "The current_time_utc is: %u", current_time_utc);
+
+        auto current_esptime = esphome::ESPTime::from_epoch_utc(current_time);
+
+        auto current_esptime_timestamp = current_esptime.timestamp;
+        ESP_LOGD("script", "The current ESPTime is: %u", current_esptime_timestamp);
+
+        auto veg_duration = id(veg_lights_duration).state;
+        auto bloom_duration = id(bloom_lights_duration).state;
+        
+        int lights_duration = veg_duration;
+                  
+        ESP_LOGD("script", "The current time is: %u", current_time); 
+                  
+        auto start_date_value = id(start_date);
+
+        if (start_date_value->year > 0) {
+          
+          ESP_LOGD("main", "Sensor state is NULL/NaN");
+
+          auto bloom_timestamp = id(bloom_date);      
+          bool is_blooming = false;                       
+       
+          ESP_LOGD("script", "The bloom_timestamp is: %d", bloom_timestamp);
+          
+          if(current_time > bloom_timestamp){
+            is_blooming = true;
+            lights_duration = bloom_duration;              
+          }
+          else{
+            is_blooming = false;
+            lights_duration = veg_duration;            
+          }
+          
+          //id(${id_prefix}_pump_script).execute();
+          ESP_LOGI("custom", "Lights Duration: %u", lights_duration);
+          ESP_LOGI("custom", "IS BLOOMING: %d", is_blooming);
+          
+          id(${id_prefix}_lights_script).execute();
+          
+          auto on_time = id(lights_on_time);
+          auto off_time = id(lights_off_time);
+              
+          if (timestamp > on_time) {
+            ESP_LOGW("script", "timestamp is > on_time UTC is: %ld", timestamp); 
+          }   
+
+          
+          ESPTime esptime_local = esphome::ESPTime::from_epoch_utc(on_time);
+          std::string formatted_time = esptime_local.strftime("%Y-%m-%d %l:%M%p");
+
+          ESP_LOGI("custom", "ESPTime ON TIME Local: %d", esptime_local);
+
+          int32_t timezone_offset = now.timezone_offset(); // offset from UTC in seconds
+          // 3. Calculate shifted local epoch integer (casted to int32_t for clean logging)
+          int32_t on_time_local_epoch = static_cast<int32_t>(on_time);
+          int32_t off_time_local_epoch = static_cast<int32_t>(off_time);
+          
+          ESP_LOGI("custom", "Raw ON_TIME UTC Epoch: %u", on_time);          
+          ESP_LOGI("custom", "On Local Epoch Timestamp: %ld", on_time_local_epoch);
+          
+          ESP_LOGI("custom", "Raw OFF_TIME UTC Epoch: %u", off_time);
+          ESP_LOGI("custom", "Off Local Epoch Timestamp: %ld", off_time_local_epoch);
+
+          ESP_LOGI("time", "now.timestamp = %ld", (long)now.timestamp);
+          ESP_LOGI("time", "lights_on    = %ld", (long)id(lights_on_time));
+          ESP_LOGI("time", "lights_off   = %ld", (long)id(lights_off_time));
+          ESP_LOGI("time", "now.hour=%d now.minute=%d", now.hour, now.minute);
+          
+          auto on = esphome::ESPTime::from_epoch_utc(id(lights_on_time));
+          auto off = esphome::ESPTime::from_epoch_utc(id(lights_off_time));
+          auto cur = esphome::ESPTime::from_epoch_utc(now.timestamp);
+          
+          char buf[32];
+          
+          on.strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
+          ESP_LOGI("time", "ON  = %s", buf);
+          
+          off.strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
+          ESP_LOGI("time", "OFF = %s", buf);
+          
+          cur.strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
+          ESP_LOGI("time", "NOW = %s", buf);          
+
+          esphome::ESPTime esptime_local_test = esphome::ESPTime::from_epoch_utc(on_time);
+          char formatted_time_test[32];
+          esptime_local_test.strftime(formatted_time_test, sizeof(formatted_time_test), "%Y-%m-%d %l:%M%p");
+          
+          ESP_LOGD("script", "The TEST is: %ld", esptime_local_test.timestamp); 
+
+          if (now > esptime_local_test) {
+            ESP_LOGD("script", "NOW is > esptime_local_test UTC is: %ld", esptime_local_test.timestamp); 
+          }   
+          if (utcnow > esptime_local_test) {
+            ESP_LOGD("script", "UTCNOW is > esptime_local_test UTC is: %ld", esptime_local_test.timestamp); 
+          }             
+
+          esptime_local_test = esphome::ESPTime::from_epoch_local(on_time);
+          
+          if (now > esptime_local_test) {
+            ESP_LOGD("script", "NOW is > esptime_local_test LOCAL is: %ld", esptime_local_test.timestamp); 
+          }     
+          
+          if (utcnow > esptime_local_test) {
+            ESP_LOGD("script", "UTCNOW is > esptime_local_test UTC is: %ld", esptime_local_test.timestamp); 
+          }            
+          
+          esptime_local = esphome::ESPTime::from_epoch_local(current_time);
+          formatted_time = esptime_local.strftime("%Y-%m-%d %H:%M:%S");
+
+          ESP_LOGI("custom", "Now: %s", formatted_time.c_str()); 
+          
+          ESP_LOGW("custom", "CURRENT TIME: %u", current_time);             
+          
+          if(current_time >= on_time_local_epoch && current_time < off_time_local_epoch) {
+            ESP_LOGW("custom", "LIGHTS SHOULD BE ON: %u", on_time_local_epoch);             
+          }
+          else{
+            ESP_LOGW("custom", "LIGHTS SHOULD BE OFF: %u", off_time_local_epoch);             
+          }
+
+          if(timestamp >= on_time && timestamp < off_time) {
+            ESP_LOGW("custom", "LIGHTS (timestamp) SHOULD BE ON: %u", timestamp);             
+          }
+          else{
+            ESP_LOGW("custom", "LIGHTS (timestamp) SHOULD BE OFF: %u", timestamp);             
+          }          
+
+          auto the_switch_state = id(${id_prefix}_light_switch).state;
+          ESP_LOGW("custom", "the_switch_state: %", the_switch_state);             
+           
+          if(timestamp >= on_time && timestamp < off_time) {
+            if(!the_switch_state){                    
+              ESP_LOGI("custom", "Turning Lights On: %u", on_time);
+              id(${id_prefix}_light_switch).turn_on();
+              id(${id_prefix}_lights_on) = true;
+              //
+              auto pump_timer = id(${id_prefix}_pump_timer);
+              id(${id_prefix}_global_pump_run_time) = 0;
+              //reset the pump data
+            }                
+          }else{
+
+            if(the_switch_state){
+              id(${id_prefix}_light_switch).turn_off();
+              id(${id_prefix}_lights_on) = false;
+              ESP_LOGI("custom", "Turning Lights Off: %u", timestamp);
+              id(${id_prefix}_global_pump_run_time) = 0;
+            }
+            
+          }
+                  
+          id(${id_prefix}_pump_script).execute();
+                  
+          if(current_time > off_time){
+            id(lights_on_time) = 0;
+            id(lights_off_time) = 0;
+          }
+          
+          // Handle the null state here
+        }
