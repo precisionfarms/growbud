@@ -241,9 +241,9 @@ interval:
       - lambda: |-
           auto now = id(ha_time).now();
           if (!now.is_valid()) return;
-          long current = now.timestamp;
+          long bloom_timestamp = id(bloom_date);
 
-          int days_since = (now.timestamp - current)/86400;
+          int days_since = (now.timestamp - bloom_timestamp)/86400;
           id(days_blooming)->publish_state(std::to_string(days_since));
 
   # - interval: 1min
@@ -343,7 +343,6 @@ number:
               ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
           
               the_harvest_date->publish_state(formatted_time);    
-
               
             }
             else{
