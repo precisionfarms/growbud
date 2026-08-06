@@ -1,0 +1,36 @@
+# Pump Scheduler Component
+#
+# This component schedules pump runs based on:
+# - Home Assistant time
+# - Light state
+# - Two interval sensors (lights on/off)
+# - Pump duration
+# - A text sensor for next-run display
+#
+# YAML Configuration:
+#
+# pump_scheduler:
+#   id: pump_sched
+#   ha_time: ha_time
+#   pump_switch: pump_switch
+#   light_switch: light_switch
+#   lights_on_interval: lights_on_pump_interval
+#   lights_off_interval: lights_off_pump_interval
+#   pump_duration: pump_duration
+#   next_run_sensor: next_pump_run_time
+#
+# Example:
+#
+# external_components:
+#   - source: github://precisionfarms/growbud
+#     components: [pump_scheduler]
+#
+# pump_scheduler:
+#   id: pump_sched
+#   ha_time: ha_time
+#   pump_switch: pump_switch
+#   light_switch: light_switch
+#   lights_on_interval: lights_on_pump_interval
+#   lights_off_interval: lights_off_pump_interval
+#   pump_duration: pump_duration
+#   next_run_sensor: next_pump_run_time
