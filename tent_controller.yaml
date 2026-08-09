@@ -808,6 +808,8 @@ script:
         
         s = bloomLightsOnTime;
 
+        std::string bloomToken = s.substr(0, s.find(delimiter));
+
         auto startHour = std::stoi(token);
 
         ESP_LOGI("lights", "START HOUR: %u", startHour);
