@@ -806,12 +806,12 @@ script:
         std::string delimiter = ":";
         std::string token = s.substr(0, s.find(delimiter));
         
-        s = bloomLightsOnTime;
+        //s = bloomLightsOnTime;
 
-        std::string bloomToken = s.substr(0, s.find(delimiter));
+        //std::string bloomToken = s.substr(0, s.find(delimiter));
 
         auto startHour = std::stoi(token);
-        auto bloomStartHour = std::stoi(bloomToken);
+        //auto bloomStartHour = std::stoi(bloomToken);
 
         ESP_LOGI("lights", "START HOUR: %u", startHour);
 
