@@ -816,7 +816,7 @@ script:
 
         ESP_LOGI("lights", "TOKEN: %s", bloomToken);
 
-        auto bloomStartHour = std::stoi(bloomToken);
+        //auto bloomStartHour = std::stoi(bloomToken);
 
         ESP_LOGI("lights", "START HOUR: %u", startHour);
 
@@ -835,8 +835,8 @@ script:
         
         if(the_time > bloom_timestamp){
           is_blooming = true;
-          lights_duration = bloom_duration;   
-          //startHour = bloomStartHour;               
+          lights_duration = bloom_duration;     
+             
         }
         else{
           is_blooming = false;
