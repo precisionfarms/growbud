@@ -811,6 +811,7 @@ script:
         std::string bloomToken = s.substr(0, s.find(delimiter));
 
         auto startHour = std::stoi(token);
+        auto bloomStartHour = std::stoi(bloomToken);
 
         ESP_LOGI("lights", "START HOUR: %u", startHour);
 
