@@ -836,7 +836,7 @@ script:
         if(the_time > bloom_timestamp){
           is_blooming = true;
           lights_duration = bloom_duration;   
-                    
+          //startHour = bloomStartHour;               
         }
         else{
           is_blooming = false;
