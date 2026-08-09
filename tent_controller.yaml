@@ -836,7 +836,7 @@ script:
         if(the_time > bloom_timestamp){
           is_blooming = true;
           lights_duration = bloom_duration;   
-          //startHour = bloomStartHour;             
+                    
         }
         else{
           is_blooming = false;
@@ -847,14 +847,7 @@ script:
         esptime_local.year = year;
         esptime_local.month = month;
         esptime_local.day_of_month = day_of_month;
-
-        if(is_blooming){
-          esptime_local.hour = bloomStartHour;
-        }
-        else{
-          esptime_local.hour = startHour;
-        }
-        
+        esptime_local.hour = startHour;
         esptime_local.minute = 0;
         esptime_local.second = 0;
         esptime_local.recalc_timestamp_utc(false);
