@@ -808,10 +808,7 @@ script:
         
         s = bloomLightsOnTime;
 
-        std::string bloom_token = s.substr(0, s.find(delimiter));
-
         auto startHour = std::stoi(token);
-        auto bloomStartHour = std::stoi(bloom_token);
 
         ESP_LOGI("lights", "START HOUR: %u", startHour);
 
@@ -831,7 +828,7 @@ script:
         if(the_time > bloom_timestamp){
           is_blooming = true;
           lights_duration = bloom_duration;     
-               
+             
         }
         else{
           is_blooming = false;
