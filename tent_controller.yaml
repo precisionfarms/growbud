@@ -806,7 +806,7 @@ script:
         std::string delimiter = ":";
         std::string token = s.substr(0, s.find(delimiter));
         
-        //s = bloomLightsOnTime;
+        s = bloomLightsOnTime;
 
         //std::string bloomToken = s.substr(0, s.find(delimiter));
 
