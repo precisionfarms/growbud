@@ -783,9 +783,11 @@ script:
         int day_of_month = now.day_of_month;
         //int lightsOnHour = id(lights_on_hour).state;
         auto lightsOnTime = id(select_lights_on_time).current_option();
+
         auto bloomLightsOnTime = id(bloom_lights_on_time).current_option();
         
         ESP_LOGI("lights", "LIGHTS ON TIME SELECT: %s", lightsOnTime);
+        ESP_LOGI("lights", "BLOOM LIGHTS ON TIME SELECT: %s", bloomLightsOnTime);
 
         int minute = now.minute;
         auto the_time = now.timestamp;
@@ -805,24 +807,8 @@ script:
         std::string token = s.substr(0, s.find(delimiter));
 
         auto startHour = std::stoi(token);
-        
-        s = bloomLightsOnTime;        
-        std::string bloomToken = s.substr(0, s.find(delimiter));
-
-        auto bloomStartHour = std::stoi(bloomToken);
 
         ESP_LOGI("lights", "START HOUR: %u", startHour);
-        ESP_LOGI("lights", "BLOOM START HOUR: %u", bloomStartHour);
-
-        if(the_time > bloom_timestamp){
-          is_blooming = true;
-          lights_duration = bloom_duration;
-          startHour = bloomStartHour;    
-        }
-        else{
-          is_blooming = false;
-          lights_duration = veg_duration;            
-        }
 
         auto light_time = id(ha_time).now();
 
@@ -837,7 +823,14 @@ script:
         //ESP_LOGI("custom", "BLOOM START DATE: %d", bloom_time);
         //ESP_LOGD("script", "The current bloom_start_date is: %u", id(bloom_start_date));
         
-
+        if(the_time > bloom_timestamp){
+          is_blooming = true;
+          lights_duration = bloom_duration;              
+        }
+        else{
+          is_blooming = false;
+          lights_duration = veg_duration;            
+        }
          
         auto esptime_local = id(ha_time).now();
         esptime_local.year = year;
@@ -852,7 +845,8 @@ script:
         
         ESP_LOGD("lights", "timestamp = %ld", (long)esptime_local.timestamp);
         ESP_LOGD("lights", "The ON is: %s", formatted_time_test); 
-                
+        
+        
         // Recalculate internal derived fields, including timestamp
 
         // Set up standard C struct tm
