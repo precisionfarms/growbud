@@ -803,22 +803,11 @@ script:
 
         bool is_blooming = false;                       
 
-        std::string s = lightsOnTime;
-        std::string delimiter = ":";
-        std::string token = s.substr(0, s.find(delimiter));
-        
-        auto startHour = std::stoi(token);
-
-        ESP_LOGI("lights", "TOKEN: %s", token);
-        
-        s = bloomLightsOnTime;
-
+        int startHour = atoi(lightsOnTime.substr(0,2).c_str());        
         int bloomStartHour = atoi(bloomLightsOnTime.substr(0,2).c_str());
         
-        std::string bloomToken = s.substr(0, s.find(delimiter));
-
-        ESP_LOGI("lights", "BLOOM TOKEN: %s", bloomToken);
         ESP_LOGI("lights", "START HOUR: %u", startHour);
+        ESP_LOGI("lights", "BLOOM START HOUR: %s", bloomStartHour);
 
         auto light_time = id(ha_time).now();
 
