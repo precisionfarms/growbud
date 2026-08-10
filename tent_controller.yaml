@@ -1,3 +1,4 @@
+
 i2c:
   sda: GPIO18
   scl: GPIO19
@@ -806,18 +807,17 @@ script:
         std::string delimiter = ":";
         std::string token = s.substr(0, s.find(delimiter));
         
-        s = bloomLightsOnTime;
-
-        std::string bloomToken = s.substr(0, s.find(delimiter));
-
-        ESP_LOGI("lights", "BLOOM TOKEN: %s", bloomToken);
-
         auto startHour = std::stoi(token);
 
         ESP_LOGI("lights", "TOKEN: %s", token);
+        
+        s = bloomLightsOnTime;
 
-        auto bloomStartHour = std::stoi(bloomToken);
+        int bloomStartHour = atoi(bloomLightsOnTime.substr(0,2).c_str());
+        
+        std::string bloomToken = s.substr(0, s.find(delimiter));
 
+        ESP_LOGI("lights", "BLOOM TOKEN: %s", bloomToken);
         ESP_LOGI("lights", "START HOUR: %u", startHour);
 
         auto light_time = id(ha_time).now();
@@ -836,7 +836,7 @@ script:
         if(the_time > bloom_timestamp){
           is_blooming = true;
           lights_duration = bloom_duration;     
-             
+          startHour = bloomStartHour;
         }
         else{
           is_blooming = false;
@@ -856,8 +856,7 @@ script:
         
         ESP_LOGD("lights", "timestamp = %ld", (long)esptime_local.timestamp);
         ESP_LOGD("lights", "The ON is: %s", formatted_time_test); 
-        
-        
+                
         // Recalculate internal derived fields, including timestamp
 
         // Set up standard C struct tm
