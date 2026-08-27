@@ -270,7 +270,8 @@ number:
     step: 1
     name: Lights On Hours
     optimistic: yes  
-    restore_value: true    
+    restore_value: true
+    mode: BOX    
   - platform: template    
     id: days_in_veg
     min_value: 1
