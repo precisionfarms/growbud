@@ -267,6 +267,7 @@ number:
     id: lights_on_hours
     min_value: 1
     max_value: 24
+    initial_value: 12
     step: 1
     name: Lights On Hours
     optimistic: yes  
