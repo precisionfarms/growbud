@@ -436,7 +436,7 @@ number:
     max_value: 60
     step: 1    
     initial_value: 20
-    name: "Lights On Pump Interval (min)"
+    name: "Lights On Pump Interval111 (min)"
     optimistic: yes
     restore_value: true
   - platform: template    
