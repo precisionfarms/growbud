@@ -263,16 +263,6 @@ number:
     name: Bloom Transition
     optimistic: yes  
     restore_value: true
-  - platform: template
-    id: lights_on_hours
-    min_value: 1
-    max_value: 24
-    initial_value: 12
-    step: 1
-    name: Lights On Hours
-    optimistic: yes  
-    restore_value: true
-    mode: BOX    
   - platform: template    
     id: days_in_veg
     min_value: 1
