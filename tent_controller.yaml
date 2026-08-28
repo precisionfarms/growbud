@@ -404,7 +404,7 @@ number:
     mode: BOX
     min_value: 1
     max_value: 24
-    step: .5    
+    step: 1    
     initial_value: 18
     name: "Veg Light Duration"
     optimistic: yes
@@ -414,7 +414,7 @@ number:
     mode: BOX
     min_value: 1
     max_value: 24
-    step: .5    
+    step: 1    
     initial_value: 12
     name: "Bloom Light Duration"
     optimistic: yes   
