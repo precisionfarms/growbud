@@ -817,7 +817,7 @@ script:
         int bloomStartHour = atoi(bloomLightsOnTime.substr(0,2).c_str());
         
         ESP_LOGI("lights", "START HOUR: %u", startHour);
-        ESP_LOGI("lights", "BLOOM START HOUR: %s", bloomStartHour);
+        ESP_LOGI("lights", "BLOOM START HOUR: %u", bloomStartHour);
 
         auto light_time = id(ha_time).now();
 
