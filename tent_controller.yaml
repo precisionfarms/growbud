@@ -80,7 +80,7 @@ sensor:
     unit_of_measurement: "pH"
     name: pH
     accuracy_decimals: 2
-    update_interval: 24h
+    update_interval: never
     i2c_id: bus_a
     on_value:
       then:
@@ -91,7 +91,7 @@ sensor:
     id: ec_ezo
     address: 0x64
     # This is for the primary conductivity reading
-    update_interval: 3600s
+    update_interval: never
     i2c_id: bus_a
     on_custom: 
       then:
