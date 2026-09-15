@@ -1,3 +1,4 @@
+
 i2c:
   sda: GPIO18
   scl: GPIO19
@@ -93,7 +94,7 @@ sensor:
     unit_of_measurement: "pH"
     name: pH
     accuracy_decimals: 2
-    update_interval: 24h
+    update_interval: never
     i2c_id: bus_a
     on_value:
       then:
@@ -104,7 +105,7 @@ sensor:
     id: ec_ezo
     address: 0x64
     # This is for the primary conductivity reading
-    update_interval: 3600s
+    update_interval: never
     i2c_id: bus_a
     on_custom: 
       then:
@@ -433,7 +434,7 @@ number:
     mode: BOX
     min_value: 1
     max_value: 24
-    step: .5    
+    step: 1    
     initial_value: 18
     name: "Veg Light Duration"
     optimistic: yes
@@ -443,7 +444,7 @@ number:
     mode: BOX
     min_value: 1
     max_value: 24
-    step: .5    
+    step: 1    
     initial_value: 12
     name: "Bloom Light Duration"
     optimistic: yes   
@@ -830,8 +831,11 @@ script:
         int day_of_month = now.day_of_month;
         //int lightsOnHour = id(lights_on_hour).state;
         auto lightsOnTime = id(select_lights_on_time).current_option();
+
+        auto bloomLightsOnTime = id(bloom_lights_on_time).current_option();
         
         ESP_LOGI("lights", "LIGHTS ON TIME SELECT: %s", lightsOnTime);
+        ESP_LOGI("lights", "BLOOM LIGHTS ON TIME SELECT: %s", bloomLightsOnTime);
 
         int minute = now.minute;
         auto the_time = now.timestamp;
@@ -846,13 +850,11 @@ script:
 
         bool is_blooming = false;                       
 
-        std::string s = lightsOnTime;
-        std::string delimiter = ":";
-        std::string token = s.substr(0, s.find(delimiter));
-
-        auto startHour = std::stoi(token);
-
+        int startHour = atoi(lightsOnTime.substr(0,2).c_str());        
+        int bloomStartHour = atoi(bloomLightsOnTime.substr(0,2).c_str());
+        
         ESP_LOGI("lights", "START HOUR: %u", startHour);
+        ESP_LOGI("lights", "BLOOM START HOUR: %u", bloomStartHour);
 
         auto light_time = id(ha_time).now();
 
@@ -869,7 +871,8 @@ script:
         
         if(the_time > bloom_timestamp){
           is_blooming = true;
-          lights_duration = bloom_duration;              
+          lights_duration = bloom_duration;     
+          startHour = bloomStartHour;
         }
         else{
           is_blooming = false;
@@ -889,8 +892,7 @@ script:
         
         ESP_LOGD("lights", "timestamp = %ld", (long)esptime_local.timestamp);
         ESP_LOGD("lights", "The ON is: %s", formatted_time_test); 
-        
-        
+                
         // Recalculate internal derived fields, including timestamp
 
         // Set up standard C struct tm
