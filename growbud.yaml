@@ -825,8 +825,8 @@ script:
         const bool is_blooming = now.timestamp > id(bloom_date);
         const std::string start_option =
             is_blooming
-                ? id(bloom_lights_on_time).state
-                : id(select_lights_on_time).state;
+                ? id(bloom_lights_on_time).current_option()
+                : id(select_lights_on_time).current_option();
         const float duration_hours =
             is_blooming
                 ? id(bloom_lights_duration).state
