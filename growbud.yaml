@@ -1,3 +1,6 @@
+substitutions:
+  timezone: America/Denver
+
 i2c:
   sda: GPIO18
   scl: GPIO19
@@ -193,6 +196,7 @@ text_sensor:
 time:
   - platform: sntp
     id: growbud_time
+    timezone: ${timezone}
     on_time_sync:
       then:
         - script.execute: ${id_prefix}_script
@@ -418,7 +422,7 @@ number:
     mode: BOX
     min_value: 1
     max_value: 24
-    step: 1    
+    step: .5
     initial_value: 18
     name: "Veg Light Duration"
     optimistic: yes
@@ -428,7 +432,7 @@ number:
     mode: BOX
     min_value: 1
     max_value: 24
-    step: 1    
+    step: .5
     initial_value: 12
     name: "Bloom Light Duration"
     optimistic: yes   
@@ -821,8 +825,8 @@ script:
         const bool is_blooming = now.timestamp > id(bloom_date);
         const std::string start_option =
             is_blooming
-                ? id(bloom_lights_on_time).current_option()
-                : id(select_lights_on_time).current_option();
+                ? id(bloom_lights_on_time).state
+                : id(select_lights_on_time).state;
         const float duration_hours =
             is_blooming
                 ? id(bloom_lights_duration).state
@@ -869,8 +873,8 @@ script:
 
         auto on_local = esphome::ESPTime::from_epoch_local(window_start);
         auto off_local = esphome::ESPTime::from_epoch_local(window_off);
-        id(the_on_time).publish_state(on_local.strftime("%Y-%m-%d %l:%M%p"));
-        id(the_off_time).publish_state(off_local.strftime("%Y-%m-%d %l:%M%p"));
+        id(the_on_time).publish_state(on_local.strftime("%Y-%m-%d %I:%M%p"));
+        id(the_off_time).publish_state(off_local.strftime("%Y-%m-%d %I:%M%p"));
 
         ESP_LOGI(
             "lights",

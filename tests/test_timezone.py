@@ -1,6 +1,8 @@
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import subprocess
+import tempfile
 from zoneinfo import ZoneInfo
 
 
@@ -56,11 +58,32 @@ class GrowBudTimezoneTests(unittest.TestCase):
         self.assertTrue(lighting_is_on(local(16, 13, 59), 20, 18))
         self.assertFalse(lighting_is_on(local(16, 14, 0), 20, 18))
 
-    def test_mktime_uses_the_single_sntp_clock_timezone(self):
+    def test_sntp_owns_the_single_configured_timezone(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
         self.assertEqual(source.count("mktime("), 7)
-        self.assertNotIn("get_timezone()", source)
-        self.assertNotIn("timezone:", source)
+        self.assertNotIn("set_timezone(", source)
+        self.assertEqual(source.count("timezone:"), 2)
+        self.assertIn("timezone: ${timezone}", source)
+
+    def test_growbud_cpp_local_time_semantics(self):
+        root = Path(__file__).parents[1]
+        esphome_core = root / ".venv/lib/python3.9/site-packages/esphome/core"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executable = Path(temp_dir) / "timezone_semantics"
+            subprocess.run(
+                [
+                    "c++",
+                    "-std=c++17",
+                    str(root / "tests/timezone_semantics.cpp"),
+                    str(esphome_core / "time.cpp"),
+                    "-I",
+                    str(esphome_core.parent.parent),
+                    "-o",
+                    str(executable),
+                ],
+                check=True,
+            )
+            subprocess.run([str(executable)], check=True)
 
 
 if __name__ == "__main__":
