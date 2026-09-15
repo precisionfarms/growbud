@@ -292,8 +292,8 @@ number:
       then:
         - lambda: |-
             auto start_year = id(start_date).year;
-            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d %0d:%02d:%02d", id(start_date).year, id(start_date).month, id(start_date).day);
-            ESP_LOGD("main", "Updated hour is earlier than %u", start_year);
+            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d", id(start_date).year, id(start_date).month, id(start_date).day);
+            ESP_LOGD("main", "Updated hour is earlier than %d", static_cast<int>(start_year));
   - platform: template
     id: bloom_transition
     min_value: 0
@@ -318,7 +318,7 @@ number:
             auto year = id(start_date).year;
             auto month = id(start_date).month;
             auto day = id(start_date).day;
-            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d %0d:%02d:%02d",year, month, day);
+            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d", year, month, day);
 
             if(year > 0){
               int days_to_add = x; // Add 7 days
@@ -385,7 +385,7 @@ number:
               auto month = bloom_time.month;
               auto day = bloom_time.day_of_month;
 
-              ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d %0d:%02d:%02d", year, month, day);
+              ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d", year, month, day);
 
               int days_to_add = x; // Add 7 days
               std::tm calculated_date{};
@@ -489,14 +489,14 @@ datetime:
 
             if(year > 0){
             
-              ESP_LOGD("main", "Day of Month: %s",  std::to_string(day_of_month)); 
+              ESP_LOGD("main", "Day of Month: %d", static_cast<int>(day_of_month));
 
               //ESP_LOGD("main", "TEST: %s", id(days_in_veg).state);            
               
               uint32_t days_in_veg_val = id(days_in_veg).state;
 
               if(id(days_in_veg).state > 0){  
-                ESP_LOGD("main", "TEST: %u", days_in_veg_val);            
+                ESP_LOGD("main", "TEST: %" PRIu32, days_in_veg_val);
               }
 
               int days_to_add = days_in_veg_val; // Add 7 days
@@ -511,9 +511,9 @@ datetime:
               ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
               std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
               
-              ESP_LOGD("custom", "Bloom Date Timestamp: %u", formatted_time);  
+              ESP_LOGD("custom", "Bloom Date Timestamp: %s", formatted_time.c_str());
               ESP_LOGD("custom", "Date: %s", current_date.strftime("%Y").c_str());     
-              ESP_LOGD("main", "Updated month: %u", month);
+              ESP_LOGD("main", "Updated month: %d", static_cast<int>(month));
 
               if (x.month >= 8) {
                 ESP_LOGD("main", "Updated hour is later or equal to 8");
@@ -546,9 +546,9 @@ datetime:
               uint8_t bloom_month = esptime_local.month;
               uint16_t bloom_year = esptime_local.year;
 
-              ESP_LOGD("main", "Bloom Year: %u", bloom_year);
-              ESP_LOGD("main", "Bloom Month: %u", bloom_month);
-              ESP_LOGD("main", "Bloom Day: %u", bloom_day);
+              ESP_LOGD("main", "Bloom Year: %d", static_cast<int>(bloom_year));
+              ESP_LOGD("main", "Bloom Month: %d", static_cast<int>(bloom_month));
+              ESP_LOGD("main", "Bloom Day: %d", static_cast<int>(bloom_day));
 
               days_to_add = id(days_in_bloom).state; // Add 7 days
               calculated_date = {};
@@ -563,13 +563,13 @@ datetime:
               
               ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
 
-              ESP_LOGI("custom", "ESPTime Local: %d", esptime_local); // esptime_local is an ESPTime struct
+              ESP_LOGI("custom", "ESPTime Local: %s", formatted_time.c_str());
                 
               auto off_time_widget = id(the_off_time);
           
               the_harvest_date->publish_state(formatted_time);   
 
-              ESP_LOGD("main", "Bloom Start Date Day of Month: %s",  std::to_string(bloom_day));
+              ESP_LOGD("main", "Bloom Start Date Day of Month: %d", static_cast<int>(bloom_day));
              
             }
             else{
