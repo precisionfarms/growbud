@@ -573,7 +573,7 @@ datetime:
              
             }
             else{
-              the_harvest_date->publish_state(NULL);   
+              the_harvest_date->publish_state("");
             }
 
 select: 
@@ -823,10 +823,12 @@ script:
         }
 
         const bool is_blooming = now.timestamp > id(bloom_date);
+        esphome::select::Select *lights_on_select =
+            is_blooming ? static_cast<esphome::select::Select *>(id(bloom_lights_on_time))
+                        : static_cast<esphome::select::Select *>(id(select_lights_on_time));
+        const auto start_index = lights_on_select->active_index();
         const std::string start_option =
-            is_blooming
-                ? id(bloom_lights_on_time).current_option()
-                : id(select_lights_on_time).current_option();
+            start_index.has_value() ? lights_on_select->at(start_index.value()).value_or("00:00") : "00:00";
         const float duration_hours =
             is_blooming
                 ? id(bloom_lights_duration).state
@@ -845,8 +847,40 @@ script:
         today_start_local.tm_sec = 0;
         today_start_local.tm_isdst = -1;
 
+        static bool log_timezone_diagnostic = true;
+        if (log_timezone_diagnostic) {
+          const char *runtime_tz = getenv("TZ");
+          ESP_LOGI("lights_tz", "Configured timezone: ${timezone}; runtime TZ: %s", runtime_tz != nullptr ? runtime_tz : "<unset>");
+          ESP_LOGI("lights_tz", "now fields: %04d-%02d-%02d %02d:%02d:%02d; epoch: %ld",
+                   now.year, now.month, now.day_of_month, now.hour, now.minute, now.second,
+                   static_cast<long>(now.timestamp));
+          ESP_LOGI("lights_tz", "parsed lights-on: %02d:00", start_hour);
+          ESP_LOGI("lights_tz", "tm before mktime: %04d-%02d-%02d %02d:%02d:%02d; tm_isdst: %d",
+                   today_start_local.tm_year + 1900, today_start_local.tm_mon + 1,
+                   today_start_local.tm_mday, today_start_local.tm_hour,
+                   today_start_local.tm_min, today_start_local.tm_sec,
+                   today_start_local.tm_isdst);
+        }
+
         const time_t today_start = mktime(&today_start_local);
         const time_t today_off = today_start + duration_seconds;
+
+        if (log_timezone_diagnostic) {
+          auto start_utc_diagnostic = esphome::ESPTime::from_epoch_utc(today_start);
+          auto start_local_diagnostic = esphome::ESPTime::from_epoch_local(today_start);
+          auto now_utc_diagnostic = esphome::ESPTime::from_epoch_utc(now.timestamp);
+          auto now_local_diagnostic = esphome::ESPTime::from_epoch_local(now.timestamp);
+          ESP_LOGI("lights_tz", "mktime epoch: %ld", static_cast<long>(today_start));
+          ESP_LOGI("lights_tz", "mktime epoch as UTC: %s",
+                   start_utc_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
+          ESP_LOGI("lights_tz", "mktime epoch as local: %s",
+                   start_local_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
+          ESP_LOGI("lights_tz", "now epoch as UTC: %s",
+                   now_utc_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
+          ESP_LOGI("lights_tz", "now epoch as local: %s",
+                   now_local_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
+          log_timezone_diagnostic = false;
+        }
 
         time_t window_start = today_start;
         time_t window_off = today_off;
