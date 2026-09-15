@@ -58,7 +58,19 @@ globals:
   - id: next_run_timestamp
     type: long
     restore_value: no
-    initial_value: '0'    
+    initial_value: '0'
+  - id: ${id_prefix}_pump_run_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ${id_prefix}_pump_run_started_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: ${id_prefix}_pump_max_runtime_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 # Example configuration entry
 switch:
   - platform: gpio
@@ -66,6 +78,8 @@ switch:
     name: Pump
     id: ${id_prefix}_pump_switch
     inverted: true
+    internal: true
+    restore_mode: ALWAYS_OFF
         # Define the automation to run when the switch is turned off
     # on_turn_off:
     #   then:       
@@ -229,6 +243,22 @@ interval:
     #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
     #       }
 interval:
+  - interval: 1s
+    id: ${id_prefix}_pump_watchdog
+    then:
+      - lambda: |-
+          if (!id(${id_prefix}_pump_switch).state) {
+            id(${id_prefix}_pump_run_active) = false;
+            return;
+          }
+
+          if (!id(${id_prefix}_pump_run_active) ||
+              static_cast<uint32_t>(millis() - id(${id_prefix}_pump_run_started_ms)) >=
+                  id(${id_prefix}_pump_max_runtime_ms)) {
+            ESP_LOGE("pump", "Pump maximum runtime exceeded; forcing pump off.");
+            id(${id_prefix}_pump_switch).turn_off();
+            id(${id_prefix}_pump_run_active) = false;
+          }
   - interval: 30min    
     startup_delay: 
       minutes: 20
@@ -679,6 +709,13 @@ select:
             
 button:  
   - platform: template
+    name: "Run Pump"
+    id: ${id_prefix}_run_pump_button
+    on_press:
+      then:
+        - lambda: |-
+            id(${id_prefix}_run_pump).execute(static_cast<int>(id(pump_duration).state));
+  - platform: template
     name: "Calibrate pH Mid"
     on_press:
       then:
@@ -719,6 +756,37 @@ button:
 
 
 script:
+  - id: ${id_prefix}_run_pump
+    mode: single
+    parameters:
+      run_duration_seconds: int
+    then:
+      - lambda: |-
+          int bounded_duration_seconds = run_duration_seconds;
+          if (bounded_duration_seconds < 1) bounded_duration_seconds = 1;
+          if (bounded_duration_seconds > 300) bounded_duration_seconds = 300;
+
+          id(${id_prefix}_pump_run_started_ms) = millis();
+          id(${id_prefix}_pump_max_runtime_ms) = static_cast<uint32_t>(bounded_duration_seconds) * 1000U;
+          id(${id_prefix}_pump_run_active) = true;
+          id(${id_prefix}_pump_switch).turn_on();
+          ESP_LOGI("pump", "Pump running for %d seconds.", bounded_duration_seconds);
+      - delay: !lambda |-
+          return id(${id_prefix}_pump_max_runtime_ms);
+      - lambda: |-
+          id(${id_prefix}_pump_switch).turn_off();
+          id(${id_prefix}_pump_run_active) = false;
+          ESP_LOGI("pump", "Pump turned off after bounded run.");
+
+          id(ph_ezo).send_custom("R");
+          auto ph = id(ph_ezo).state;
+          auto target = id(ph_target).state;
+
+          if (ph > target) {
+            ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
+          } else if (ph < target) {
+            ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
+          }
   - id: ${id_prefix}_script2
     then:
       lambda: !lambda |-
@@ -780,38 +848,17 @@ script:
           
         // Trigger pump execution
         if (current_timestamp >= current_run_time && !id(${id_prefix}_pump_switch).state) {
-            id(${id_prefix}_pump_switch).turn_on();           
-            ESP_LOGD("pump", "Pump running for %ld seconds.", pump_timer_duration);
-            
-            App.scheduler.set_timeout(nullptr, "turn_off_pump_job", pump_timer_duration * 1000, [=]() {
-                ESP_LOGD("pump", "Pump turned off automatically after %ld seconds.", pump_timer_duration);
-                id(${id_prefix}_pump_switch).turn_off();        
+            id(${id_prefix}_run_pump).execute(static_cast<int>(pump_timer_duration));
 
-                auto next_run = current_timestamp + duration_seconds;
-                
-                id(${id_prefix}_global_pump_run_time) = next_run;
-                
-                esphome::ESPTime next_esptime = esphome::ESPTime::from_epoch_local(next_run);                
-                char next_formatted[32];
-                next_esptime.strftime(next_formatted, sizeof(next_formatted), "%Y-%m-%d %I:%M %p");
-        
-                id(next_pump_run_time).publish_state(next_formatted);
+            auto next_run = current_timestamp + duration_seconds;
+            id(${id_prefix}_global_pump_run_time) = next_run;
 
-                ESP_LOGD("pump", "Setting next pump time to: %s", formatted_time);
-                
-                id(ph_ezo).send_custom("R");
-                auto ph = id(ph_ezo).state;
-                auto target = id(ph_target).state;
-                
-                if(ph > target){
-                  ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
-                }
-                else if(ph < id(ph_target).state)
-                {                                
-                  ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);                 
-                }                   
-                
-            });
+            esphome::ESPTime next_esptime = esphome::ESPTime::from_epoch_local(next_run);
+            char next_formatted[32];
+            next_esptime.strftime(next_formatted, sizeof(next_formatted), "%Y-%m-%d %I:%M %p");
+
+            id(next_pump_run_time).publish_state(next_formatted);
+            ESP_LOGD("pump", "Setting next pump time to: %s", next_formatted);
         }
                 
   - id: ${id_prefix}_lights_script
