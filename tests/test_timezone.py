@@ -56,11 +56,11 @@ class GrowBudTimezoneTests(unittest.TestCase):
         self.assertTrue(lighting_is_on(local(16, 13, 59), 20, 18))
         self.assertFalse(lighting_is_on(local(16, 14, 0), 20, 18))
 
-    def test_every_mktime_path_reapplies_the_configured_clock_timezone(self):
+    def test_mktime_uses_the_single_sntp_clock_timezone(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
-        timezone_apply = "id(growbud_time).set_timezone(id(growbud_time).get_timezone());"
         self.assertEqual(source.count("mktime("), 7)
-        self.assertEqual(source.count(timezone_apply), 5)
+        self.assertNotIn("get_timezone()", source)
+        self.assertNotIn("timezone:", source)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,6 @@
 substitutions:
   id_prefix: growbud_test
   name_prefix: "GrowBud Test"
-  timezone: America/Denver
 
 packages:
   growbud: !include ../growbud.yaml
@@ -26,3 +25,9 @@ ota:
 wifi:
   ssid: "growbud-validation-only"
   password: "not-a-real-password"
+
+# Deployment configurations can override ESPHome's build-environment timezone
+# when the build host does not use the grow site's timezone.
+time:
+  - id: !extend growbud_time
+    timezone: America/Denver

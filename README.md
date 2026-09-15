@@ -6,7 +6,6 @@
 substitutions:
   id_prefix: tent_1
   name_prefix: "Tent 1"
-  timezone: America/Denver
 
 packages:
   growbud:
@@ -15,7 +14,24 @@ packages:
     files: [growbud.yaml]
 ```
 
-Set `timezone` to the controller's local [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) region, such as `America/Denver` or `Europe/London`.
+GrowBud uses ESPHome's build-environment timezone by default. When ESPHome runs
+in the same correctly configured Home Assistant environment, no second timezone
+setting is needed. ESPHome converts that timezone to a DST-aware POSIX rule and
+embeds it in the firmware, while SNTP remains the independent source of current
+time.
+
+If firmware is built on a machine whose timezone differs from the grow site,
+override the package's time component explicitly:
+
+```yaml
+time:
+  - id: !extend growbud_time
+    timezone: America/Denver
+```
+
+Use a local [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
+region such as `America/Denver` or `Europe/London`. Rebuild and install the
+firmware after changing the timezone.
 
 ## Development validation
 
