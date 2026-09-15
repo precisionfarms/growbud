@@ -1,3 +1,5 @@
+substitutions:
+  timezone: America/Denver
 
 i2c:
   sda: GPIO18
@@ -192,21 +194,18 @@ text_sensor:
     id: days_blooming    
     
 time:
-  - platform: homeassistant    
-    id: ha_time
+  - platform: sntp
+    id: growbud_time
+    timezone: ${timezone}
+    on_time_sync:
+      then:
+        - script.execute: ${id_prefix}_script
     on_time:
       # Every 1 minute
       - seconds: 0
         minutes: /1
         then:
           - script.execute: ${id_prefix}_script
-        
-
-# Example configuration entry
-    timezone: America/Denver
-
-# Example configuration entry
-
 interval:
   - interval: 1s
     id: ${id_prefix}_pump_watchdog
@@ -255,7 +254,7 @@ interval:
     id: value_updates
     then:
       - lambda: |-
-          auto now = id(ha_time).now();
+          auto now = id(growbud_time).now();
           if (!now.is_valid()) return;
           long bloom_timestamp = id(bloom_date);
 
@@ -545,11 +544,11 @@ datetime:
                           
               the_bloom_date->publish_state(formatted_time);              
 
-              auto now = id(ha_time).now();
-              
-              int days_since = (now.timestamp - timestamp)/86400;
-              
-              id(days_blooming)->publish_state(std::to_string(days_since));
+              auto now = id(growbud_time).now();
+              if (now.is_valid()) {
+                int days_since = (now.timestamp - timestamp)/86400;
+                id(days_blooming)->publish_state(std::to_string(days_since));
+              }
               
               uint8_t bloom_day = esptime_local.day_of_month;
               uint8_t bloom_month = esptime_local.month;
@@ -748,12 +747,18 @@ script:
   - id: ${id_prefix}_script2
     then:
       lambda: !lambda |-
-        int hour = id(ha_time).now().hour;
-        int minute = id(ha_time).now().minute;
+        auto now = id(growbud_time).now();
+        if (!now.is_valid()) return;
+        int hour = now.hour;
+        int minute = now.minute;
   - id: ${id_prefix}_pump_script
     then:
       lambda: !lambda |-
-        auto now = id(ha_time).now();  
+        auto now = id(growbud_time).now();
+        if (!now.is_valid()) {
+          ESP_LOGW("pump", "Time is invalid; skipping scheduled irrigation evaluation.");
+          return;
+        }
         auto current_timestamp = now.timestamp; 
         
         ESP_LOGW("pump", "PUMP TIMESTAMP: %ld", (long) current_timestamp);
@@ -822,370 +827,104 @@ script:
   - id: ${id_prefix}_lights_script
     then:
       lambda: !lambda |-
-      
-        auto now = id(ha_time).now();
-        
-        int year = now.year;
-        int hour = now.hour;
-        int month = now.month;
-        int day_of_month = now.day_of_month;
-        //int lightsOnHour = id(lights_on_hour).state;
-        auto lightsOnTime = id(select_lights_on_time).current_option();
-
-        auto bloomLightsOnTime = id(bloom_lights_on_time).current_option();
-        
-        ESP_LOGI("lights", "LIGHTS ON TIME SELECT: %s", lightsOnTime);
-        ESP_LOGI("lights", "BLOOM LIGHTS ON TIME SELECT: %s", bloomLightsOnTime);
-
-        int minute = now.minute;
-        auto the_time = now.timestamp;
-        auto veg_duration = id(veg_lights_duration).state;
-        auto bloom_duration = id(bloom_lights_duration).state;
-         
-        int lights_duration = veg_duration;
-
-        auto bloom_timestamp = id(bloom_date);
-        
-        ESP_LOGI("lights", "BLOOM TIMESTAMP: %u", bloom_timestamp);
-
-        bool is_blooming = false;                       
-
-        int startHour = atoi(lightsOnTime.substr(0,2).c_str());        
-        int bloomStartHour = atoi(bloomLightsOnTime.substr(0,2).c_str());
-        
-        ESP_LOGI("lights", "START HOUR: %u", startHour);
-        ESP_LOGI("lights", "BLOOM START HOUR: %u", bloomStartHour);
-
-        auto light_time = id(ha_time).now();
-
-        light_time.hour = startHour;
-        light_time.minute = 0;
-        light_time.second = 0;
-        
-        light_time.recalc_timestamp_utc(true);
-        
-        ESP_LOGI("time", "timestamp = %ld", (long)light_time.timestamp);
-
-        //ESP_LOGI("custom", "BLOOM START DATE: %d", bloom_time);
-        //ESP_LOGD("script", "The current bloom_start_date is: %u", id(bloom_start_date));
-        
-        if(the_time > bloom_timestamp){
-          is_blooming = true;
-          lights_duration = bloom_duration;     
-          startHour = bloomStartHour;
+        auto now = id(growbud_time).now();
+        if (!now.is_valid()) {
+          ESP_LOGW("lights", "Time is invalid; leaving the light relay unchanged.");
+          return;
         }
-        else{
-          is_blooming = false;
-          lights_duration = veg_duration;            
+
+        auto start_date_value = id(start_date);
+        if (start_date_value->year <= 0) {
+          ESP_LOGW("lights", "Grow start date is not configured; leaving the light relay unchanged.");
+          return;
         }
-         
-        auto esptime_local = id(ha_time).now();
-        esptime_local.year = year;
-        esptime_local.month = month;
-        esptime_local.day_of_month = day_of_month;
-        esptime_local.hour = startHour;
-        esptime_local.minute = 0;
-        esptime_local.second = 0;
-        esptime_local.recalc_timestamp_utc(false);
-        char formatted_time_test[32];
-        esptime_local.strftime(formatted_time_test, sizeof(formatted_time_test), "%Y-%m-%d %l:%M%p");
-        
-        ESP_LOGD("lights", "timestamp = %ld", (long)esptime_local.timestamp);
-        ESP_LOGD("lights", "The ON is: %s", formatted_time_test); 
-                
-        // Recalculate internal derived fields, including timestamp
 
-        // Set up standard C struct tm
-        struct tm t = {};
-        t.tm_year = year - 1900; // Years since 1900 (e.g. 2026 - 1900 = 126)
-        t.tm_mon  = month - 1;   // Months 0-11 (e.g. August = 7)
-        t.tm_mday = day_of_month;
-        t.tm_hour = startHour;
-        t.tm_min  = 0;
-        t.tm_sec  = 0;
-        t.tm_isdst = -1;         // -1 lets system determine daylight saving time automatically
-        
-        // Convert struct tm to Unix timestamp (seconds since 1970)
-        time_t timestamp = mktime(&t);
+        const bool is_blooming = now.timestamp > id(bloom_date);
+        const std::string start_option =
+            is_blooming
+                ? id(bloom_lights_on_time).current_option()
+                : id(select_lights_on_time).current_option();
+        const float duration_hours =
+            is_blooming
+                ? id(bloom_lights_duration).state
+                : id(veg_lights_duration).state;
 
-        ESP_LOGI("time", "lights_on timestamp = %ld", (long)id(lights_on_time));
+        const int start_hour = atoi(start_option.substr(0, 2).c_str());
+        const time_t duration_seconds =
+            static_cast<time_t>(duration_hours * 3600.0f + 0.5f);
 
-        ESPTime utc = ESPTime::from_epoch_utc(id(lights_on_time));
-        ESPTime local = ESPTime::from_epoch_local(id(lights_on_time));
-        
-        char b1[32], b2[32];
-        
-        utc.strftime(b1, sizeof(b1), "%Y-%m-%d %H:%M:%S");
-        local.strftime(b2, sizeof(b2), "%Y-%m-%d %H:%M:%S");
-        
-        ESP_LOGI("time", "lights_on UTC   = %s", b1);
-        ESP_LOGI("time", "lights_on LOCAL = %s", b2);
+        struct tm today_start_local = {};
+        today_start_local.tm_year = now.year - 1900;
+        today_start_local.tm_mon = now.month - 1;
+        today_start_local.tm_mday = now.day_of_month;
+        today_start_local.tm_hour = start_hour;
+        today_start_local.tm_min = 0;
+        today_start_local.tm_sec = 0;
+        today_start_local.tm_isdst = -1;
 
-        // 1. Raw UTC interpretation (No timezone shift applied)
-        esphome::ESPTime esptime_utc = esphome::ESPTime::from_epoch_utc(timestamp);
-        char str_utc[32];
-        esptime_utc.strftime(str_utc, sizeof(str_utc), "%Y-%m-%d %l:%M%p");
-        ESP_LOGI("lights", "UTC Interpretation:   %s", str_utc);
-        
-        // 2. Local interpretation (Applies configured YAML timezone)
-        esphome::ESPTime esptime_local1 = esphome::ESPTime::from_epoch_local(timestamp);
-        char str_local[32];
-        
-        esptime_local1.strftime(str_local, sizeof(str_local), "%Y-%m-%d %l:%M%p");
-        ESP_LOGI("lights", "Local Interpretation: %s", str_local);
+        const time_t today_start = mktime(&today_start_local);
+        const time_t today_off = today_start + duration_seconds;
 
-        ESP_LOGI("lights", "LIGHTS ON TIME: %ld", (long)timestamp);        
+        time_t window_start = today_start;
+        time_t window_off = today_off;
+        bool lights_should_be_on =
+            now.timestamp >= today_start && now.timestamp < today_off;
 
-        esphome::ESPTime local_esptime = esphome::ESPTime::from_epoch_local(timestamp);
-        
-        // 3. Format into a local time string
-        char formatted_local_time[32];
-        local_esptime.strftime(formatted_local_time, sizeof(formatted_local_time), "%Y-%m-%d %l:%M%p");
-        
-        ESP_LOGI("lights", "Local Time: %s", formatted_local_time);    
-        
-        //timestamp = esptime_local.timestamp;
-        
-        id(lights_on_time) = timestamp;
+        if (now.timestamp < today_start) {
+          struct tm previous_start_local = today_start_local;
+          previous_start_local.tm_mday -= 1;
+          previous_start_local.tm_isdst = -1;
 
-        ESP_LOGI("lights", "LIGHTS ON TIME: %u", id(lights_on_time));
+          const time_t previous_start = mktime(&previous_start_local);
+          const time_t previous_off = previous_start + duration_seconds;
 
-        esptime_local = esphome::ESPTime::from_epoch_utc(id(lights_on_time));
-        auto formatted_time = esptime_local.strftime("%Y-%m-%d %l:%M%p");  
-        
-        auto on_time_widget = id(the_on_time);
-        on_time_widget->publish_state(formatted_time);
+          if (now.timestamp >= previous_start && now.timestamp < previous_off) {
+            window_start = previous_start;
+            window_off = previous_off;
+            lights_should_be_on = true;
+          }
+        }
 
-        ESP_LOGI("custom", "On Time Widget: %s", on_time_widget->state.c_str());
-        ESP_LOGI("custom", "On Time: %s", formatted_time.c_str());        
-        
-        t.tm_year = year - 1900; // Years since 1900 (e.g. 2026 - 1900 = 126)
-        t.tm_mon  = month - 1;   // Months 0-11 (e.g. August = 7)
-        t.tm_mday = day_of_month;
-        t.tm_hour = startHour + lights_duration;
-        t.tm_min  = 0;
-        t.tm_sec  = 0;
-        t.tm_isdst = -1;         // -1 lets system determine daylight saving time automatically
-        
-        // Convert struct tm to Unix timestamp (seconds since 1970)
-        timestamp = mktime(&t);
-        
-        id(lights_off_time) = timestamp;
-               
-        ESP_LOGI("lights", "LIGHTS OFF TIME: %u", id(lights_off_time));  
-        
-        esptime_local = esphome::ESPTime::from_epoch_utc(id(lights_off_time));
-        formatted_time = esptime_local.strftime("%Y-%m-%d %l:%M%p");         
-        
-        auto off_time_widget = id(the_off_time);
-        off_time_widget->publish_state(formatted_time);
+        id(lights_on_time) = static_cast<int>(window_start);
+        id(lights_off_time) = static_cast<int>(window_off);
 
-        ESP_LOGI("custom", "Off Time: %s", formatted_time.c_str());           
+        auto on_local = esphome::ESPTime::from_epoch_local(window_start);
+        auto off_local = esphome::ESPTime::from_epoch_local(window_off);
+        id(the_on_time).publish_state(on_local.strftime("%Y-%m-%d %l:%M%p"));
+        id(the_off_time).publish_state(off_local.strftime("%Y-%m-%d %l:%M%p"));
+
+        ESP_LOGI(
+            "lights",
+            "%s schedule: %.1f hours starting at %s; relay should be %s.",
+            is_blooming ? "Bloom" : "Vegetative",
+            duration_hours,
+            start_option.c_str(),
+            lights_should_be_on ? "ON" : "OFF");
+
+        const bool light_is_on = id(${id_prefix}_light_switch).state;
+        if (lights_should_be_on && !light_is_on) {
+          id(${id_prefix}_light_switch).turn_on();
+          id(${id_prefix}_lights_on) = true;
+          id(${id_prefix}_global_pump_run_time) = 0;
+          ESP_LOGI("lights", "Turning lights on.");
+        } else if (!lights_should_be_on && light_is_on) {
+          id(${id_prefix}_light_switch).turn_off();
+          id(${id_prefix}_lights_on) = false;
+          id(${id_prefix}_global_pump_run_time) = 0;
+          ESP_LOGI("lights", "Turning lights off.");
+        }
 
   - id: ${id_prefix}_script
     then:
-      lambda: !lambda |-     
-      
-        auto now = id(ha_time).now();
-        auto utcnow = id(ha_time).utcnow();
-        
-        auto current_time = now.timestamp;
-        auto current_time_utc = utcnow.timestamp;
+      lambda: !lambda |-
+        auto now = id(growbud_time).now();
+        if (!now.is_valid()) {
+          ESP_LOGW("lights", "Time is invalid; skipping lighting and irrigation schedule evaluation.");
+          return;
+        }
 
-        ESP_LOGI("time", "now.hour      = %d", now.hour);
-        ESP_LOGI("time", "utc.hour      = %d", utcnow.hour);
-
-        ESP_LOGI("time", "now.timestamp = %ld", (long)now.timestamp);
-        ESP_LOGI("time", "utc.timestamp = %ld", (long)utcnow.timestamp);
-
-        ESPTime test1 = ESPTime::from_epoch_utc(now.timestamp);
-        ESPTime test2 = ESPTime::from_epoch_local(now.timestamp);
-        
-        char b1[32];
-        char b2[32];
-        
-        test1.strftime(b1, sizeof(b1), "%Y-%m-%d %H:%M:%S");
-        test2.strftime(b2, sizeof(b2), "%Y-%m-%d %H:%M:%S");
-        
-        ESP_LOGI("time", "now.hour=%d", now.hour);
-        ESP_LOGI("time", "UTC   = %s", b1);
-        ESP_LOGI("time", "LOCAL = %s", b2);
-
-        int year = now.year;
-        int hour = now.hour;
-        int month = now.month;
-        int day_of_month = now.day_of_month;
-
-        struct tm t = {};
-        t.tm_year = year - 1900; // Years since 1900 (e.g. 2026 - 1900 = 126)
-        t.tm_mon  = month - 1;   // Months 0-11 (e.g. August = 7)
-        t.tm_mday = day_of_month;
-        t.tm_hour = hour;
-        t.tm_min  = now.minute;
-        t.tm_sec  = now.second;
-        t.tm_isdst = -1;         // -1 lets system determine daylight saving time automatically
-           
-        auto timestamp = mktime(&t);
-
-        ESP_LOGW("script", "The timestamp is: %u", timestamp);
-        ESP_LOGW("script", "The current_time_utc is: %u", current_time_utc);
-
-        auto current_esptime = esphome::ESPTime::from_epoch_utc(current_time);
-
-        auto current_esptime_timestamp = current_esptime.timestamp;
-        ESP_LOGD("script", "The current ESPTime is: %u", current_esptime_timestamp);
-
-        auto veg_duration = id(veg_lights_duration).state;
-        auto bloom_duration = id(bloom_lights_duration).state;
-        
-        int lights_duration = veg_duration;
-                  
-        ESP_LOGD("script", "The current time is: %u", current_time); 
-                  
         auto start_date_value = id(start_date);
-
         if (start_date_value->year > 0) {
-          
-          ESP_LOGD("main", "Sensor state is NULL/NaN");
-
-          auto bloom_timestamp = id(bloom_date);      
-          bool is_blooming = false;                       
-       
-          ESP_LOGD("script", "The bloom_timestamp is: %d", bloom_timestamp);
-          
-          if(current_time > bloom_timestamp){
-            is_blooming = true;
-            lights_duration = bloom_duration;              
-          }
-          else{
-            is_blooming = false;
-            lights_duration = veg_duration;            
-          }
-          
-          //id(${id_prefix}_pump_script).execute();
-          ESP_LOGI("custom", "Lights Duration: %u", lights_duration);
-          ESP_LOGI("custom", "IS BLOOMING: %d", is_blooming);
-          
           id(${id_prefix}_lights_script).execute();
-          
-          auto on_time = id(lights_on_time);
-          auto off_time = id(lights_off_time);
-              
-          if (timestamp > on_time) {
-            ESP_LOGW("script", "timestamp is > on_time UTC is: %ld", timestamp); 
-          }   
-
-          
-          ESPTime esptime_local = esphome::ESPTime::from_epoch_utc(on_time);
-          std::string formatted_time = esptime_local.strftime("%Y-%m-%d %l:%M%p");
-
-          ESP_LOGI("custom", "ESPTime ON TIME Local: %d", esptime_local);
-
-          int32_t timezone_offset = now.timezone_offset(); // offset from UTC in seconds
-          // 3. Calculate shifted local epoch integer (casted to int32_t for clean logging)
-          int32_t on_time_local_epoch = static_cast<int32_t>(on_time);
-          int32_t off_time_local_epoch = static_cast<int32_t>(off_time);
-          
-          ESP_LOGI("custom", "Raw ON_TIME UTC Epoch: %u", on_time);          
-          ESP_LOGI("custom", "On Local Epoch Timestamp: %ld", on_time_local_epoch);
-          
-          ESP_LOGI("custom", "Raw OFF_TIME UTC Epoch: %u", off_time);
-          ESP_LOGI("custom", "Off Local Epoch Timestamp: %ld", off_time_local_epoch);
-
-          ESP_LOGI("time", "now.timestamp = %ld", (long)now.timestamp);
-          ESP_LOGI("time", "lights_on    = %ld", (long)id(lights_on_time));
-          ESP_LOGI("time", "lights_off   = %ld", (long)id(lights_off_time));
-          ESP_LOGI("time", "now.hour=%d now.minute=%d", now.hour, now.minute);
-          
-          auto on = esphome::ESPTime::from_epoch_utc(id(lights_on_time));
-          auto off = esphome::ESPTime::from_epoch_utc(id(lights_off_time));
-          auto cur = esphome::ESPTime::from_epoch_utc(now.timestamp);
-          
-          char buf[32];
-          
-          on.strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
-          ESP_LOGI("time", "ON  = %s", buf);
-          
-          off.strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
-          ESP_LOGI("time", "OFF = %s", buf);
-          
-          cur.strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S");
-          ESP_LOGI("time", "NOW = %s", buf);          
-
-          esphome::ESPTime esptime_local_test = esphome::ESPTime::from_epoch_utc(on_time);
-          char formatted_time_test[32];
-          esptime_local_test.strftime(formatted_time_test, sizeof(formatted_time_test), "%Y-%m-%d %l:%M%p");
-          
-          ESP_LOGD("script", "The TEST is: %ld", esptime_local_test.timestamp); 
-
-          if (now > esptime_local_test) {
-            ESP_LOGD("script", "NOW is > esptime_local_test UTC is: %ld", esptime_local_test.timestamp); 
-          }   
-          if (utcnow > esptime_local_test) {
-            ESP_LOGD("script", "UTCNOW is > esptime_local_test UTC is: %ld", esptime_local_test.timestamp); 
-          }             
-
-          esptime_local_test = esphome::ESPTime::from_epoch_local(on_time);
-          
-          if (now > esptime_local_test) {
-            ESP_LOGD("script", "NOW is > esptime_local_test LOCAL is: %ld", esptime_local_test.timestamp); 
-          }     
-          
-          if (utcnow > esptime_local_test) {
-            ESP_LOGD("script", "UTCNOW is > esptime_local_test UTC is: %ld", esptime_local_test.timestamp); 
-          }            
-          
-          esptime_local = esphome::ESPTime::from_epoch_local(current_time);
-          formatted_time = esptime_local.strftime("%Y-%m-%d %H:%M:%S");
-
-          ESP_LOGI("custom", "Now: %s", formatted_time.c_str()); 
-          
-          ESP_LOGW("custom", "CURRENT TIME: %u", current_time);             
-          
-          if(current_time >= on_time_local_epoch && current_time < off_time_local_epoch) {
-            ESP_LOGW("custom", "LIGHTS SHOULD BE ON: %u", on_time_local_epoch);             
-          }
-          else{
-            ESP_LOGW("custom", "LIGHTS SHOULD BE OFF: %u", off_time_local_epoch);             
-          }
-
-          if(timestamp >= on_time && timestamp < off_time) {
-            ESP_LOGW("custom", "LIGHTS (timestamp) SHOULD BE ON: %u", timestamp);             
-          }
-          else{
-            ESP_LOGW("custom", "LIGHTS (timestamp) SHOULD BE OFF: %u", timestamp);             
-          }          
-
-          auto the_switch_state = id(${id_prefix}_light_switch).state;
-          ESP_LOGW("custom", "the_switch_state: %", the_switch_state);             
-           
-          if(timestamp >= on_time && timestamp < off_time) {
-            if(!the_switch_state){                    
-              ESP_LOGI("custom", "Turning Lights On: %u", on_time);
-              id(${id_prefix}_light_switch).turn_on();
-              id(${id_prefix}_lights_on) = true;
-              //
-              auto pump_timer = id(${id_prefix}_pump_timer);
-              id(${id_prefix}_global_pump_run_time) = 0;
-              //reset the pump data
-            }                
-          }else{
-
-            if(the_switch_state){
-              id(${id_prefix}_light_switch).turn_off();
-              id(${id_prefix}_lights_on) = false;
-              ESP_LOGI("custom", "Turning Lights Off: %u", timestamp);
-              id(${id_prefix}_global_pump_run_time) = 0;
-            }
-            
-          }
-                  
           id(${id_prefix}_pump_script).execute();
-                  
-          if(current_time > off_time){
-            id(lights_on_time) = 0;
-            id(lights_off_time) = 0;
-          }
-          
-          // Handle the null state here
         }

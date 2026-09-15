@@ -1,1 +1,4 @@
 .idea/
+.venv/
+.esphome/
+.DS_Store

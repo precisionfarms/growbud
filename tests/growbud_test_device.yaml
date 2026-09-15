@@ -1,0 +1,28 @@
+substitutions:
+  id_prefix: growbud_test
+  name_prefix: "GrowBud Test"
+  timezone: America/Denver
+
+packages:
+  growbud: !include ../growbud.yaml
+
+esphome:
+  name: growbud-test
+  friendly_name: GrowBud Test
+  min_version: 2025.5.0
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: "growbud-validation-only"
+  password: "not-a-real-password"
