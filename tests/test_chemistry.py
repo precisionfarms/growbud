@@ -44,8 +44,53 @@ class GrowBudChemistryTests(unittest.TestCase):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
         last_ph = source.split('id: last_stored_ph_sensor', 1)[1]
         last_ph = last_ph.split('text_sensor:', 1)[0]
-        self.assertIn("chemistry().has_valid_ph()) return NAN;", last_ph)
+        self.assertIn("update_interval: never", last_ph)
+        self.assertNotIn("lambda:", last_ph)
+        startup = source.split("on_boot:", 1)[1].split("i2c:", 1)[0]
+        self.assertIn("id(last_stored_ph_sensor).publish_state(NAN)", startup)
+        ph_event = source.split("id: ph_ezo", 1)[1].split("id: ec_ezo", 1)[0]
+        self.assertIn("id(last_stored_ph_sensor).publish_state", ph_event)
         self.assertNotIn("value_or(0.0)", last_ph)
+
+    def test_chemistry_status_entities_are_not_polling_components(self):
+        source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
+        for name in ("pH Measurement Status", "EC Measurement Status"):
+            entity = source.split(f'name: "{name}"', 1)[1].split(
+                "  - platform:", 1
+            )[0]
+            self.assertIn("update_interval: never", entity)
+            self.assertNotIn("lambda:", entity)
+
+    def test_status_publication_is_transition_guarded(self):
+        source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
+        publication = source.split(
+            "  - id: ${id_prefix}_publish_chemistry_status\n", 1
+        )[1].split("  - id: ${id_prefix}_publish_reservoir\n", 1)[0]
+        self.assertIn("!id(ph_measurement_status).has_state()", publication)
+        self.assertIn("id(ph_measurement_status).state != ph_status", publication)
+        self.assertIn("!id(ec_measurement_status).has_state()", publication)
+        self.assertIn("id(ec_measurement_status).state != ec_status", publication)
+        self.assertEqual(publication.count("publish_state"), 2)
+
+    def test_startup_events_and_freshness_check_use_transition_publisher(self):
+        source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
+        startup = source.split("on_boot:", 1)[1].split("i2c:", 1)[0]
+        self.assertIn("script.execute: ${id_prefix}_publish_chemistry_status", startup)
+        freshness = source.split(
+            "# Retain time-based chemistry freshness", 1
+        )[1].split("id: ${id_prefix}_pump_watchdog", 1)[0]
+        self.assertIn("interval: 15s", freshness)
+        self.assertIn("script.execute: ${id_prefix}_publish_chemistry_status", freshness)
+
+    def test_each_chemistry_result_evaluates_status_transition(self):
+        source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
+        ph_event = source.split("id: ph_ezo", 1)[1].split("id: ec_ezo", 1)[0]
+        ec_event = source.split("id: ec_ezo", 1)[1].split("id: ec_value", 1)[0]
+        self.assertIn("script.execute: ${id_prefix}_publish_chemistry_status", ph_event)
+        self.assertEqual(
+            ec_event.count("script.execute: ${id_prefix}_publish_chemistry_status"),
+            2,
+        )
 
     def test_malformed_ec_response_never_becomes_zero(self):
         last_valid = (1450.5, 725.2, 0.71, 1.001)
@@ -71,7 +116,10 @@ class GrowBudChemistryTests(unittest.TestCase):
 
     def test_native_polling_and_no_fake_zero_fallback(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
-        self.assertGreaterEqual(source.count("update_interval: 60s"), 3)
+        ph_ezo = source.split("id: ph_ezo", 1)[1].split("id: ec_ezo", 1)[0]
+        ec_ezo = source.split("id: ec_ezo", 1)[1].split("id: ec_value", 1)[0]
+        self.assertIn("update_interval: 60s", ph_ezo)
+        self.assertIn("update_interval: 60s", ec_ezo)
         self.assertNotIn("value_or(0.0)", source)
         self.assertIn("pH Measurement Status", source)
         self.assertIn("EC Measurement Status", source)

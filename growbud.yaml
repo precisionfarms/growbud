@@ -19,6 +19,9 @@ esphome:
   on_boot:
     - priority: -100
       then:
+        - lambda: |-
+            id(last_stored_ph_sensor).publish_state(NAN);
+        - script.execute: ${id_prefix}_publish_chemistry_status
         - script.execute: ${id_prefix}_read_reservoir
 
 i2c:
@@ -141,7 +144,11 @@ sensor:
         - lambda: |-
             if (!id(growbud_controller).chemistry().record_ph(x, millis())) {
               ESP_LOGW("chemistry", "Ignoring invalid pH measurement.");
+            } else {
+              id(last_stored_ph_sensor).publish_state(
+                  id(growbud_controller).chemistry().last_ph());
             }
+        - script.execute: ${id_prefix}_publish_chemistry_status
   - platform: ezo
     id: ec_ezo
     address: 0x64
@@ -156,6 +163,7 @@ sensor:
               return;
             }
             id(ec_value).publish_state(x);
+        - script.execute: ${id_prefix}_publish_chemistry_status
     on_custom: 
       then:
         - lambda: !lambda |-
@@ -197,6 +205,7 @@ sensor:
             id(salinity_value).publish_state(*salinity);
             id(sg_value).publish_state(*sg);
             id(growbud_controller).chemistry().record_ec(*ec, millis());
+        - script.execute: ${id_prefix}_publish_chemistry_status
   - platform: template
     id: ec_value
     name: ${name_prefix} Conductivity (EC)
@@ -222,10 +231,7 @@ sensor:
     id: last_stored_ph_sensor
     unit_of_measurement: "pH"
     accuracy_decimals: 2
-    lambda: |-
-      if (!id(growbud_controller).chemistry().has_valid_ph()) return NAN;
-      return id(growbud_controller).chemistry().last_ph();
-    update_interval: 60s # Updates the dashboard entity every minute
+    update_interval: never
   - platform: template
     name: "Reservoir Distance"
     id: reservoir_distance
@@ -256,17 +262,11 @@ text_sensor:
   - platform: template
     name: "pH Measurement Status"
     id: ph_measurement_status
-    update_interval: 15s
-    lambda: |-
-      return {esphome::growbud::measurement_status_string(
-          id(growbud_controller).chemistry().ph_status(millis()))};
+    update_interval: never
   - platform: template
     name: "EC Measurement Status"
     id: ec_measurement_status
-    update_interval: 15s
-    lambda: |-
-      return {esphome::growbud::measurement_status_string(
-          id(growbud_controller).chemistry().ec_status(millis()))};
+    update_interval: never
   - platform: template
     name: "EZO EC Response"
     id: ezo_ec_response 
@@ -303,6 +303,11 @@ time:
         then:
           - script.execute: ${id_prefix}_script
 interval:
+  # Retain time-based chemistry freshness while publishing only status changes.
+  - interval: 15s
+    id: ${id_prefix}_chemistry_freshness_check
+    then:
+      - script.execute: ${id_prefix}_publish_chemistry_status
   - interval: 1s
     id: ${id_prefix}_pump_watchdog
     then:
@@ -687,6 +692,23 @@ button:
 
 
 script:
+  - id: ${id_prefix}_publish_chemistry_status
+    mode: restart
+    then:
+      - lambda: |-
+          const std::string ph_status = esphome::growbud::measurement_status_string(
+              id(growbud_controller).chemistry().ph_status(millis()));
+          if (!id(ph_measurement_status).has_state() ||
+              id(ph_measurement_status).state != ph_status) {
+            id(ph_measurement_status).publish_state(ph_status);
+          }
+
+          const std::string ec_status = esphome::growbud::measurement_status_string(
+              id(growbud_controller).chemistry().ec_status(millis()));
+          if (!id(ec_measurement_status).has_state() ||
+              id(ec_measurement_status).state != ec_status) {
+            id(ec_measurement_status).publish_state(ec_status);
+          }
   - id: ${id_prefix}_publish_reservoir
     mode: restart
     then:
