@@ -7,6 +7,9 @@ substitutions:
 external_components:
   - source: ${growbud_component_source}
     components: [growbud]
+    # The remote package and external component have separate ESPHome caches.
+    # Refresh floating refs so main cannot pair new YAML with stale C++.
+    refresh: always
 
 growbud:
   id: growbud_controller

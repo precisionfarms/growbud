@@ -6,6 +6,12 @@ SOURCE = (Path(__file__).parents[1] / "growbud.yaml").read_text()
 
 
 class GrowBudManualPumpSwitchTests(unittest.TestCase):
+    def test_floating_component_source_is_refreshed_with_remote_package(self):
+        external = SOURCE.split("external_components:", 1)[1].split(
+            "growbud:", 1
+        )[0]
+        self.assertIn("refresh: always", external)
+
     def setUp(self):
         switch_section = SOURCE.split("switch:", 1)[1].split("sensor:", 1)[0]
         self.gpio = switch_section.split("- platform: gpio", 1)[1].split(
