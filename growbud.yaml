@@ -1,5 +1,13 @@
 substitutions:
   timezone: America/Denver
+  growbud_component_source: github://precisionfarms/growbud@main
+
+external_components:
+  - source: ${growbud_component_source}
+    components: [growbud]
+
+growbud:
+  id: growbud_controller
 
 i2c:
   sda: GPIO18
@@ -44,9 +52,6 @@ globals:
   - id: bloom_date
     type: int
     restore_value: yes    
-  - id: ${id_prefix}_global_pump_run_time
-    type: int
-    restore_value: no     
   - id: test_ec
     type: float
     restore_value: no
@@ -55,47 +60,8 @@ globals:
     restore_value: yes
     max_restore_data_length: 24
     initial_value: "false"             
-  - id: last_ph_reading
-    type: float
-    restore_value: yes
-  - id: ph_has_valid_reading
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: ph_last_success_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
-  - id: ph_measurement_failed
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: ec_has_valid_reading
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: ec_last_success_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
-  - id: ec_measurement_failed
-    type: bool
-    restore_value: no
-    initial_value: 'false'
   - id: next_run_timestamp
     type: long
-    restore_value: no
-    initial_value: '0'
-  - id: ${id_prefix}_pump_run_active
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: ${id_prefix}_pump_run_started_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
-  - id: ${id_prefix}_pump_max_runtime_ms
-    type: uint32_t
     restore_value: no
     initial_value: '0'
 # Example configuration entry
@@ -125,15 +91,9 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            if (!std::isfinite(x)) {
-              id(ph_measurement_failed) = true;
+            if (!id(growbud_controller).chemistry().record_ph(x, millis())) {
               ESP_LOGW("chemistry", "Ignoring invalid pH measurement.");
-              return;
             }
-            id(last_ph_reading) = x;
-            id(ph_last_success_ms) = millis();
-            id(ph_has_valid_reading) = true;
-            id(ph_measurement_failed) = false;
   - platform: ezo
     id: ec_ezo
     address: 0x64
@@ -143,15 +103,11 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            if (!std::isfinite(x)) {
-              id(ec_measurement_failed) = true;
+            if (!id(growbud_controller).chemistry().record_ec(x, millis())) {
               ESP_LOGW("chemistry", "Ignoring invalid conductivity measurement.");
               return;
             }
             id(ec_value).publish_state(x);
-            id(ec_last_success_ms) = millis();
-            id(ec_has_valid_reading) = true;
-            id(ec_measurement_failed) = false;
     on_custom: 
       then:
         - lambda: !lambda |-
@@ -171,7 +127,7 @@ sensor:
             }
 
             if (parts.size() < 4) {
-              id(ec_measurement_failed) = true;
+              id(growbud_controller).chemistry().mark_ec_failed();
               ESP_LOGW("chemistry", "Ignoring incomplete EC response: '%s'", x.c_str());
               return;
             }
@@ -183,7 +139,7 @@ sensor:
             if (!ec.has_value() || !tds.has_value() || !salinity.has_value() || !sg.has_value() ||
                 !std::isfinite(*ec) || !std::isfinite(*tds) ||
                 !std::isfinite(*salinity) || !std::isfinite(*sg)) {
-              id(ec_measurement_failed) = true;
+              id(growbud_controller).chemistry().mark_ec_failed();
               ESP_LOGW("chemistry", "Ignoring malformed EC response: '%s'", x.c_str());
               return;
             }
@@ -192,9 +148,7 @@ sensor:
             id(tds_value).publish_state(*tds);
             id(salinity_value).publish_state(*salinity);
             id(sg_value).publish_state(*sg);
-            id(ec_last_success_ms) = millis();
-            id(ec_has_valid_reading) = true;
-            id(ec_measurement_failed) = false;
+            id(growbud_controller).chemistry().record_ec(*ec, millis());
   - platform: template
     id: ec_value
     name: ${name_prefix} Conductivity (EC)
@@ -221,8 +175,8 @@ sensor:
     unit_of_measurement: "pH"
     accuracy_decimals: 2
     lambda: |-
-      if (!id(ph_has_valid_reading)) return NAN;
-      return id(last_ph_reading);
+      if (!id(growbud_controller).chemistry().has_valid_ph()) return NAN;
+      return id(growbud_controller).chemistry().last_ph();
     update_interval: 60s # Updates the dashboard entity every minute
 
 text_sensor:
@@ -231,17 +185,15 @@ text_sensor:
     id: ph_measurement_status
     update_interval: 15s
     lambda: |-
-      if (!id(ph_has_valid_reading) || id(ph_measurement_failed)) return {"Unavailable"};
-      if (static_cast<uint32_t>(millis() - id(ph_last_success_ms)) > 180000U) return {"Stale"};
-      return {"Valid"};
+      return {esphome::growbud::measurement_status_string(
+          id(growbud_controller).chemistry().ph_status(millis()))};
   - platform: template
     name: "EC Measurement Status"
     id: ec_measurement_status
     update_interval: 15s
     lambda: |-
-      if (!id(ec_has_valid_reading) || id(ec_measurement_failed)) return {"Unavailable"};
-      if (static_cast<uint32_t>(millis() - id(ec_last_success_ms)) > 180000U) return {"Stale"};
-      return {"Valid"};
+      return {esphome::growbud::measurement_status_string(
+          id(growbud_controller).chemistry().ec_status(millis()))};
   - platform: template
     name: "EZO EC Response"
     id: ezo_ec_response 
@@ -282,17 +234,10 @@ interval:
     id: ${id_prefix}_pump_watchdog
     then:
       - lambda: |-
-          if (!id(${id_prefix}_pump_switch).state) {
-            id(${id_prefix}_pump_run_active) = false;
-            return;
-          }
-
-          if (!id(${id_prefix}_pump_run_active) ||
-              static_cast<uint32_t>(millis() - id(${id_prefix}_pump_run_started_ms)) >=
-                  id(${id_prefix}_pump_max_runtime_ms)) {
+          if (id(growbud_controller).pump().watchdog_should_stop(
+                  id(${id_prefix}_pump_switch).state, millis())) {
             ESP_LOGE("pump", "Pump maximum runtime exceeded; forcing pump off.");
             id(${id_prefix}_pump_switch).turn_off();
-            id(${id_prefix}_pump_run_active) = false;
           }
   - interval: 30min    
     startup_delay: 
@@ -316,11 +261,6 @@ interval:
     #         ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
     #       }    
 
-  - interval: 1min
-    id: ${id_prefix}_lights_timer 
-    then:
-      - lambda: !lambda |-
-          id(${id_prefix}_lights_timer);
   - interval: 5min
     id: value_updates
     then:
@@ -330,16 +270,7 @@ interval:
           long bloom_timestamp = id(bloom_date);
 
           auto bloom_time = esphome::ESPTime::from_epoch_local(bloom_timestamp);
-          esphome::ESPTime today = now;
-          today.hour = 0;
-          today.minute = 0;
-          today.second = 0;
-          today.recalc_timestamp_utc(false);
-          bloom_time.hour = 0;
-          bloom_time.minute = 0;
-          bloom_time.second = 0;
-          bloom_time.recalc_timestamp_utc(false);
-          int days_since = (today.timestamp - bloom_time.timestamp) / 86400;
+          int days_since = id(growbud_controller).calendar_days_since(now, bloom_time);
           id(days_blooming)->publish_state(std::to_string(days_since));
 
   # - interval: 1min
@@ -386,58 +317,18 @@ number:
     on_value: 
       then:
         - lambda: !lambda |-
-            auto year = id(start_date).year;
-            auto month = id(start_date).month;
-            auto day = id(start_date).day;
-            ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d", year, month, day);
-
-            if(year > 0){
-              int days_to_add = x; // Add 7 days
-              ESPTime calculated_date{};
-              calculated_date.year = year;
-              calculated_date.month = month;
-              calculated_date.day_of_month = day;
-              calculated_date.recalc_timestamp_local();
-              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
-              for (int i = 0; i < days_to_add; i++) esptime_local.increment_day();
-              esptime_local.hour = 0;
-              esptime_local.minute = 0;
-              esptime_local.second = 0;
-              esptime_local.recalc_timestamp_local();
-              time_t timestamp = esptime_local.timestamp;
-              std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
-              
-              ESP_LOGD("custom", "Timestamp: %s", formatted_time.c_str());  
-
-              id(bloom_date) = timestamp;
-              
-              the_bloom_date->publish_state(formatted_time);   
-              
-              year = esptime_local.year;
-              month = esptime_local.month;
-              day = esptime_local.day_of_month;
-
-              days_to_add = id(days_in_bloom).state; // Add 7 days
-              calculated_date = {};
-              calculated_date.year = year;
-              calculated_date.month = month;
-              calculated_date.day_of_month = day;
-              calculated_date.recalc_timestamp_local();
-              esptime_local = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
-              for (int i = 0; i < days_to_add; i++) esptime_local.increment_day();
-              esptime_local.hour = 0;
-              esptime_local.minute = 0;
-              esptime_local.second = 0;
-              esptime_local.recalc_timestamp_local();
-              timestamp = esptime_local.timestamp;
-              formatted_time = esptime_local.strftime("%Y-%m-%d");
-              
-              ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
-          
-              the_harvest_date->publish_state(formatted_time);    
-              
-            }
-            else{
+            auto start_date_value = id(start_date);
+            if (start_date_value->year > 0) {
+              esphome::ESPTime start{};
+              start.year = start_date_value->year;
+              start.month = start_date_value->month;
+              start.day_of_month = start_date_value->day;
+              auto cycle = id(growbud_controller).calculate_grow_cycle(
+                  start, static_cast<int>(x), static_cast<int>(id(days_in_bloom).state));
+              id(bloom_date) = cycle.bloom.timestamp;
+              the_bloom_date->publish_state(cycle.bloom.strftime("%Y-%m-%d"));
+              the_harvest_date->publish_state(cycle.harvest.strftime("%Y-%m-%d"));
+            } else {
               the_harvest_date->publish_state("");
             }
   
@@ -454,40 +345,11 @@ number:
     on_value: 
       then:
         - lambda: !lambda |-
-
-            if(start_date->year > 0){
-              auto bloom_timestamp = id(bloom_date);
-              ESPTime bloom_time = esphome::ESPTime::from_epoch_local(bloom_timestamp);
-              std::string formatted_time = bloom_time.strftime("%Y-%m-%d");
-
-              auto year = bloom_time.year;
-              auto month = bloom_time.month;
-              auto day = bloom_time.day_of_month;
-
-              ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d", year, month, day);
-
-              int days_to_add = x; // Add 7 days
-              ESPTime calculated_date{};
-              calculated_date.year = year;
-              calculated_date.month = month;
-              calculated_date.day_of_month = day;
-              calculated_date.recalc_timestamp_local();
-              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
-              for (int i = 0; i < days_to_add; i++) esptime_local.increment_day();
-              esptime_local.hour = 0;
-              esptime_local.minute = 0;
-              esptime_local.second = 0;
-              esptime_local.recalc_timestamp_local();
-              time_t timestamp = esptime_local.timestamp;
-              formatted_time = esptime_local.strftime("%Y-%m-%d");
-              
-              ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
-
-              auto off_time_widget = id(the_off_time);
-          
-              the_harvest_date->publish_state(formatted_time);              
-            }
-            else{
+            if (id(start_date)->year > 0) {
+              auto bloom_time = esphome::ESPTime::from_epoch_local(id(bloom_date));
+              auto harvest = id(growbud_controller).add_calendar_days(bloom_time, static_cast<int>(x));
+              the_harvest_date->publish_state(harvest.strftime("%Y-%m-%d"));
+            } else {
               the_harvest_date->publish_state("");
             }
   
@@ -562,104 +424,19 @@ datetime:
     on_value: 
       then:
          - lambda: !lambda |-  
-            ESPTime current_date = x;
-            if(!current_date.is_valid())
-              ESP_LOGD("custom", "Not Valid");  
-
-            uint8_t day_of_month = x.day_of_month;
-            uint8_t month = x.month;
-            uint16_t year = x.year;
-
-            if(year > 0){
-            
-              ESP_LOGD("main", "Day of Month: %d", static_cast<int>(day_of_month));
-
-              //ESP_LOGD("main", "TEST: %s", id(days_in_veg).state);            
-              
-              uint32_t days_in_veg_val = id(days_in_veg).state;
-
-              if(id(days_in_veg).state > 0){  
-                ESP_LOGD("main", "TEST: %" PRIu32, days_in_veg_val);
-              }
-
-              int days_to_add = days_in_veg_val; // Add 7 days
-              
-              ESPTime calculated_date = current_date;
-              calculated_date.hour = 0;
-              calculated_date.minute = 0;
-              calculated_date.second = 0;
-              calculated_date.recalc_timestamp_local();
-              calculated_date = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
-              for (int i = 0; i < days_to_add; i++) calculated_date.increment_day();
-              calculated_date.recalc_timestamp_local();
-              time_t timestamp = calculated_date.timestamp;
-              
-              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
-              std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
-              
-              ESP_LOGD("custom", "Bloom Date Timestamp: %s", formatted_time.c_str());
-              ESP_LOGD("custom", "Date: %s", current_date.strftime("%Y").c_str());     
-              ESP_LOGD("main", "Updated month: %d", static_cast<int>(month));
-
-              if (x.month >= 8) {
-                ESP_LOGD("main", "Updated hour is later or equal to 8");
-                
-              } else {
-                ESP_LOGD("main", "Updated hour is earlier than 8");
-              }
-              
-              id(bloom_date) = timestamp;
-              //id(the_bloom_date).state = formatted_time;
-                          
-              the_bloom_date->publish_state(formatted_time);              
-
+            if (x.year > 0) {
+              auto cycle = id(growbud_controller).calculate_grow_cycle(
+                  x, static_cast<int>(id(days_in_veg).state),
+                  static_cast<int>(id(days_in_bloom).state));
+              id(bloom_date) = cycle.bloom.timestamp;
+              the_bloom_date->publish_state(cycle.bloom.strftime("%Y-%m-%d"));
+              the_harvest_date->publish_state(cycle.harvest.strftime("%Y-%m-%d"));
               auto now = id(growbud_time).now();
               if (now.is_valid()) {
-                esphome::ESPTime today = now;
-                today.hour = 0;
-                today.minute = 0;
-                today.second = 0;
-                today.recalc_timestamp_utc(false);
-                esptime_local.hour = 0;
-                esptime_local.minute = 0;
-                esptime_local.second = 0;
-                esptime_local.recalc_timestamp_utc(false);
-                int days_since = (today.timestamp - esptime_local.timestamp) / 86400;
+                int days_since = id(growbud_controller).calendar_days_since(now, cycle.bloom);
                 id(days_blooming)->publish_state(std::to_string(days_since));
               }
-              
-              uint8_t bloom_day = esptime_local.day_of_month;
-              uint8_t bloom_month = esptime_local.month;
-              uint16_t bloom_year = esptime_local.year;
-
-              ESP_LOGD("main", "Bloom Year: %d", static_cast<int>(bloom_year));
-              ESP_LOGD("main", "Bloom Month: %d", static_cast<int>(bloom_month));
-              ESP_LOGD("main", "Bloom Day: %d", static_cast<int>(bloom_day));
-
-              days_to_add = id(days_in_bloom).state; // Add 7 days
-              calculated_date = esptime_local;
-              for (int i = 0; i < days_to_add; i++) calculated_date.increment_day();
-              calculated_date.hour = 0;
-              calculated_date.minute = 0;
-              calculated_date.second = 0;
-              calculated_date.recalc_timestamp_local();
-              timestamp = calculated_date.timestamp;
-              
-              esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
-              formatted_time = esptime_local.strftime("%Y-%m-%d");
-              
-              ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
-
-              ESP_LOGI("custom", "ESPTime Local: %s", formatted_time.c_str());
-                
-              auto off_time_widget = id(the_off_time);
-          
-              the_harvest_date->publish_state(formatted_time);   
-
-              ESP_LOGD("main", "Bloom Start Date Day of Month: %d", static_cast<int>(bloom_day));
-             
-            }
-            else{
+            } else {
               the_harvest_date->publish_state("");
             }
 
@@ -789,20 +566,16 @@ script:
       run_duration_seconds: int
     then:
       - lambda: |-
-          int bounded_duration_seconds = run_duration_seconds;
-          if (bounded_duration_seconds < 1) bounded_duration_seconds = 1;
-          if (bounded_duration_seconds > 300) bounded_duration_seconds = 300;
-
-          id(${id_prefix}_pump_run_started_ms) = millis();
-          id(${id_prefix}_pump_max_runtime_ms) = static_cast<uint32_t>(bounded_duration_seconds) * 1000U;
-          id(${id_prefix}_pump_run_active) = true;
+          if (!id(growbud_controller).pump().begin(run_duration_seconds, millis())) return;
+          int bounded_duration_seconds =
+              esphome::growbud::PumpState::bounded_duration_seconds(run_duration_seconds);
           id(${id_prefix}_pump_switch).turn_on();
           ESP_LOGI("pump", "Pump running for %d seconds.", bounded_duration_seconds);
       - delay: !lambda |-
-          return id(${id_prefix}_pump_max_runtime_ms);
+          return id(growbud_controller).pump().maximum_runtime_ms();
       - lambda: |-
           id(${id_prefix}_pump_switch).turn_off();
-          id(${id_prefix}_pump_run_active) = false;
+          id(growbud_controller).pump().complete();
           ESP_LOGI("pump", "Pump turned off after bounded run.");
       - component.update: ph_ezo
   - id: ${id_prefix}_script2
@@ -820,69 +593,24 @@ script:
           ESP_LOGW("pump", "Time is invalid; skipping scheduled irrigation evaluation.");
           return;
         }
-        auto current_timestamp = now.timestamp; 
-        
-        ESP_LOGW("pump", "PUMP TIMESTAMP: %ld", (long) current_timestamp);
-        
-        auto current_run_time = id(${id_prefix}_global_pump_run_time);
-        ESP_LOGW("pump", "PUMP RUN TIME: %ld", (long) current_run_time);
-        
-        // Determine interval duration
         int duration_minutes = id(lights_off_pump_interval).state;
         if (id(${id_prefix}_light_switch).state) {
           ESP_LOGI("pump", "Light switch is ON");
           duration_minutes = id(lights_on_pump_interval).state;
-          
         } else {
           ESP_LOGI("pump", "Light switch is OFF");
         }
-        
-        int duration_seconds = duration_minutes * 60;
-
-        // Initialize global run time if unset
-        if (current_run_time == 0) {
-          ESP_LOGD("pump", "Current run time is 0. Initializing next run time...");
-          current_run_time = current_timestamp + duration_seconds;
-          id(${id_prefix}_global_pump_run_time) = current_run_time;
-
-          esphome::ESPTime next_esptime = esphome::ESPTime::from_epoch_local(current_run_time);                
-          char next_formatted[32];
-          next_esptime.strftime(next_formatted, sizeof(next_formatted), "%Y-%m-%d %I:%M %p");
-  
-          id(next_pump_run_time).publish_state(next_formatted);
-        }
-        else{
-          //current_run_time = current_timestamp + duration_seconds;
-        }
-             
-        // Format string for Next Pump Run Time
-        esphome::ESPTime esptime_local = esphome::ESPTime::from_epoch_local(current_run_time);
+        auto evaluation = id(growbud_controller).evaluate_irrigation(
+            now.timestamp, duration_minutes, id(${id_prefix}_pump_switch).state);
+        esphome::ESPTime esptime_local = esphome::ESPTime::from_epoch_local(evaluation.next_run);
         char formatted_time[32];
         esptime_local.strftime(formatted_time, sizeof(formatted_time), "%Y-%m-%d %I:%M %p");
-
-        // Update text sensor on boot / initial calculation
-        if (!id(next_pump_run_time).has_state()) {
-            id(next_pump_run_time).publish_state(formatted_time);
-            ESP_LOGI("pump", "Initial text sensor value set: %s", formatted_time);
-        }  
-        
+        if (evaluation.initialized || evaluation.run_due || !id(next_pump_run_time).has_state()) {
+          id(next_pump_run_time).publish_state(formatted_time);
+        }
         ESP_LOGD("pump", "The next pump time is: %s", formatted_time);
-        
-        long pump_timer_duration = id(pump_duration).state;
-          
-        // Trigger pump execution
-        if (current_timestamp >= current_run_time && !id(${id_prefix}_pump_switch).state) {
-            id(${id_prefix}_run_pump).execute(static_cast<int>(pump_timer_duration));
-
-            auto next_run = current_timestamp + duration_seconds;
-            id(${id_prefix}_global_pump_run_time) = next_run;
-
-            esphome::ESPTime next_esptime = esphome::ESPTime::from_epoch_local(next_run);
-            char next_formatted[32];
-            next_esptime.strftime(next_formatted, sizeof(next_formatted), "%Y-%m-%d %I:%M %p");
-
-            id(next_pump_run_time).publish_state(next_formatted);
-            ESP_LOGD("pump", "Setting next pump time to: %s", next_formatted);
+        if (evaluation.run_due) {
+          id(${id_prefix}_run_pump).execute(static_cast<int>(id(pump_duration).state));
         }
                 
   - id: ${id_prefix}_lights_script
@@ -912,47 +640,14 @@ script:
                 ? id(bloom_lights_duration).state
                 : id(veg_lights_duration).state;
 
-        const int start_hour = atoi(start_option.substr(0, 2).c_str());
-        const time_t duration_seconds =
-            static_cast<time_t>(duration_hours * 3600.0f + 0.5f);
+        auto schedule = id(growbud_controller).calculate_lighting_schedule(
+            now, atoi(start_option.substr(0, 2).c_str()), duration_hours);
 
-        esphome::ESPTime today_start_local = now;
-        today_start_local.hour = start_hour;
-        today_start_local.minute = 0;
-        today_start_local.second = 0;
+        id(lights_on_time) = static_cast<int>(schedule.window_start);
+        id(lights_off_time) = static_cast<int>(schedule.window_off);
 
-        today_start_local.recalc_timestamp_local();
-        const time_t today_start = today_start_local.timestamp;
-        const time_t today_off = today_start + duration_seconds;
-
-        time_t window_start = today_start;
-        time_t window_off = today_off;
-        bool lights_should_be_on =
-            now.timestamp >= today_start && now.timestamp < today_off;
-
-        if (now.timestamp < today_start) {
-          esphome::ESPTime previous_start_local =
-              esphome::ESPTime::from_epoch_local(today_start - 1);
-          previous_start_local.hour = start_hour;
-          previous_start_local.minute = 0;
-          previous_start_local.second = 0;
-          previous_start_local.recalc_timestamp_local();
-
-          const time_t previous_start = previous_start_local.timestamp;
-          const time_t previous_off = previous_start + duration_seconds;
-
-          if (now.timestamp >= previous_start && now.timestamp < previous_off) {
-            window_start = previous_start;
-            window_off = previous_off;
-            lights_should_be_on = true;
-          }
-        }
-
-        id(lights_on_time) = static_cast<int>(window_start);
-        id(lights_off_time) = static_cast<int>(window_off);
-
-        auto on_local = esphome::ESPTime::from_epoch_local(window_start);
-        auto off_local = esphome::ESPTime::from_epoch_local(window_off);
+        auto on_local = esphome::ESPTime::from_epoch_local(schedule.window_start);
+        auto off_local = esphome::ESPTime::from_epoch_local(schedule.window_off);
         id(the_on_time).publish_state(on_local.strftime("%Y-%m-%d %I:%M%p"));
         id(the_off_time).publish_state(off_local.strftime("%Y-%m-%d %I:%M%p"));
 
@@ -962,18 +657,18 @@ script:
             is_blooming ? "Bloom" : "Vegetative",
             duration_hours,
             start_option.c_str(),
-            lights_should_be_on ? "ON" : "OFF");
+            schedule.lights_should_be_on ? "ON" : "OFF");
 
         const bool light_is_on = id(${id_prefix}_light_switch).state;
-        if (lights_should_be_on && !light_is_on) {
+        if (schedule.lights_should_be_on && !light_is_on) {
           id(${id_prefix}_light_switch).turn_on();
           id(${id_prefix}_lights_on) = true;
-          id(${id_prefix}_global_pump_run_time) = 0;
+          id(growbud_controller).reset_irrigation_schedule();
           ESP_LOGI("lights", "Turning lights on.");
-        } else if (!lights_should_be_on && light_is_on) {
+        } else if (!schedule.lights_should_be_on && light_is_on) {
           id(${id_prefix}_light_switch).turn_off();
           id(${id_prefix}_lights_on) = false;
-          id(${id_prefix}_global_pump_run_time) = 0;
+          id(growbud_controller).reset_irrigation_schedule();
           ESP_LOGI("lights", "Turning lights off.");
         }
 

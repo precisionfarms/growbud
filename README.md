@@ -6,6 +6,7 @@
 substitutions:
   id_prefix: tent_1
   name_prefix: "Tent 1"
+  growbud_component_source: github://precisionfarms/growbud@main
 
 packages:
   growbud:
@@ -33,6 +34,11 @@ Use a local [TZ database](https://en.wikipedia.org/wiki/List_of_tz_database_time
 region such as `America/Denver` or `Europe/London`. Rebuild and install the
 firmware after changing the timezone.
 
+`growbud.yaml` loads the reusable `growbud` external component from the same
+GitHub repository. When pinning the package to a release tag, also set
+`growbud_component_source` to that tag so the YAML package and component stay
+on the same version, for example `github://precisionfarms/growbud@v1.2.3`.
+
 ## Development validation
 
 `growbud.yaml` is validated through a representative ESP32/ESP-IDF device configuration in `tests/growbud_test_device.yaml`. The fixture uses local package inclusion and contains no production credentials.
@@ -56,4 +62,4 @@ Compile the representative firmware:
 .venv/bin/esphome compile tests/growbud_test_device.yaml
 ```
 
-GrowBud configuration validation is tested with ESPHome 2025.5.0, the version pinned in `requirements-dev.txt`. Production device configurations should pin a released GrowBud tag rather than following `main`.
+GrowBud configuration validation is tested with ESPHome 2026.8.2, the version pinned in `requirements-dev.txt`. Production device configurations should pin a released GrowBud tag rather than following `main`.

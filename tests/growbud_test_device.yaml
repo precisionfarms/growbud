@@ -1,6 +1,7 @@
 substitutions:
   id_prefix: growbud_test
   name_prefix: "GrowBud Test"
+  growbud_component_source: ../components
 
 packages:
   growbud: !include ../growbud.yaml
@@ -8,7 +9,7 @@ packages:
 esphome:
   name: growbud-test
   friendly_name: GrowBud Test
-  min_version: 2025.5.0
+  min_version: 2026.8.2
 
 esp32:
   board: esp32dev

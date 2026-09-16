@@ -44,7 +44,7 @@ class GrowBudChemistryTests(unittest.TestCase):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
         last_ph = source.split('id: last_stored_ph_sensor', 1)[1]
         last_ph = last_ph.split('text_sensor:', 1)[0]
-        self.assertIn("if (!id(ph_has_valid_reading)) return NAN;", last_ph)
+        self.assertIn("chemistry().has_valid_ph()) return NAN;", last_ph)
         self.assertNotIn("value_or(0.0)", last_ph)
 
     def test_malformed_ec_response_never_becomes_zero(self):
@@ -75,6 +75,8 @@ class GrowBudChemistryTests(unittest.TestCase):
         self.assertNotIn("value_or(0.0)", source)
         self.assertIn("pH Measurement Status", source)
         self.assertIn("EC Measurement Status", source)
+        component = (Path(__file__).parents[1] / "components/growbud/growbud.cpp").read_text()
+        self.assertIn("CHEMISTRY_FRESHNESS_MS", component)
 
 
 if __name__ == "__main__":

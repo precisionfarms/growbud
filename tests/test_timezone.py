@@ -78,8 +78,12 @@ class GrowBudTimezoneTests(unittest.TestCase):
 
     def test_sntp_owns_the_single_configured_timezone(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
-        self.assertNotIn("mktime(", source)
-        self.assertIn("recalc_timestamp_local()", source)
+        component = (Path(__file__).parents[1] / "components/growbud/growbud.cpp").read_text()
+        self.assertNotIn("mktime(", source + component)
+        self.assertNotIn("today_start - 1", source + component)
+        self.assertIn("result.day_of_month--", component)
+        self.assertIn("days_in_month", component)
+        self.assertIn("recalc_timestamp_local()", component)
         self.assertNotIn("set_timezone(", source)
         self.assertEqual(sum(line.lstrip().startswith("timezone:") for line in source.splitlines()), 2)
         self.assertIn("timezone: ${timezone}", source)
