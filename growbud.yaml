@@ -127,6 +127,7 @@ sensor:
             if (!id(growbud_controller).reservoir().record_distance(x)) {
               ESP_LOGW("reservoir", "Ignoring invalid reservoir distance.");
             }
+        - script.execute: ${id_prefix}_publish_reservoir
   - platform: ezo
     id: ph_ezo
     address: 0x63
@@ -231,43 +232,27 @@ sensor:
     unit_of_measurement: "cm"
     accuracy_decimals: 1
     state_class: measurement
-    update_interval: 15s
-    lambda: |-
-      if (!id(growbud_controller).reservoir().has_accepted_distance()) return NAN;
-      return id(growbud_controller).reservoir().distance_cm();
+    update_interval: never
   - platform: template
     name: "Reservoir Level"
     id: reservoir_level
     unit_of_measurement: "%"
     accuracy_decimals: 1
     state_class: measurement
-    update_interval: 15s
-    lambda: |-
-      const float level = id(growbud_controller).reservoir().level_fraction(
-          id(reservoir_full_distance).state, id(reservoir_empty_distance).state);
-      return std::isfinite(level) ? level * 100.0f : NAN;
+    update_interval: never
   - platform: template
     name: "Reservoir Volume"
     id: reservoir_volume
     unit_of_measurement: "gal"
     accuracy_decimals: 2
     state_class: measurement
-    update_interval: 15s
-    lambda: |-
-      return id(growbud_controller).reservoir().volume_gallons(
-          id(reservoir_full_distance).state, id(reservoir_empty_distance).state,
-          id(reservoir_capacity).state);
+    update_interval: never
 
 text_sensor:
   - platform: template
     name: "Reservoir Measurement Status"
     id: reservoir_measurement_status
-    update_interval: 15s
-    lambda: |-
-      return {esphome::growbud::measurement_status_string(
-          id(growbud_controller).reservoir().status(
-              id(reservoir_full_distance).state,
-              id(reservoir_empty_distance).state))};
+    update_interval: never
   - platform: template
     name: "pH Measurement Status"
     id: ph_measurement_status
@@ -387,6 +372,9 @@ number:
     mode: box
     optimistic: true
     restore_value: true
+    on_value:
+      then:
+        - script.execute: ${id_prefix}_publish_reservoir
   - platform: template
     id: reservoir_empty_distance
     name: "Reservoir Empty Distance"
@@ -398,6 +386,9 @@ number:
     mode: box
     optimistic: true
     restore_value: true
+    on_value:
+      then:
+        - script.execute: ${id_prefix}_publish_reservoir
   - platform: template
     id: reservoir_capacity
     name: "Reservoir Capacity"
@@ -409,6 +400,9 @@ number:
     mode: box
     optimistic: true
     restore_value: true
+    on_value:
+      then:
+        - script.execute: ${id_prefix}_publish_reservoir
   - platform: template
     id: veg_transition
     min_value: 0
@@ -693,6 +687,27 @@ button:
 
 
 script:
+  - id: ${id_prefix}_publish_reservoir
+    mode: restart
+    then:
+      - lambda: |-
+          auto &reservoir = id(growbud_controller).reservoir();
+          id(reservoir_distance).publish_state(
+              reservoir.has_accepted_distance() ? reservoir.distance_cm() : NAN);
+
+          const float level = reservoir.level_fraction(
+              id(reservoir_full_distance).state,
+              id(reservoir_empty_distance).state);
+          id(reservoir_level).publish_state(
+              std::isfinite(level) ? level * 100.0f : NAN);
+          id(reservoir_volume).publish_state(reservoir.volume_gallons(
+              id(reservoir_full_distance).state,
+              id(reservoir_empty_distance).state,
+              id(reservoir_capacity).state));
+          id(reservoir_measurement_status).publish_state(
+              esphome::growbud::measurement_status_string(reservoir.status(
+                  id(reservoir_full_distance).state,
+                  id(reservoir_empty_distance).state)));
   - id: ${id_prefix}_read_reservoir
     mode: restart
     then:

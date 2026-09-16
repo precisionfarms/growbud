@@ -15,6 +15,59 @@ class GrowBudEventReservoirTests(unittest.TestCase):
         self.assertIn("update_interval: never", ultrasonic)
         self.assertNotIn("update_interval: 30s", ultrasonic)
 
+    def test_derived_entities_are_not_polled(self):
+        sensor_section = YAML.split("sensor:", 1)[1].split("text_sensor:", 1)[0]
+        for name in ("Reservoir Distance", "Reservoir Level", "Reservoir Volume"):
+            entity = sensor_section.split(f'name: "{name}"', 1)[1].split(
+                "  - platform:", 1
+            )[0]
+            self.assertIn("update_interval: never", entity)
+            self.assertNotIn("lambda:", entity)
+
+        status = YAML.split('name: "Reservoir Measurement Status"', 1)[1].split(
+            "  - platform:", 1
+        )[0]
+        self.assertIn("update_interval: never", status)
+        self.assertNotIn("lambda:", status)
+
+    def test_acquisition_result_publishes_all_derived_entities(self):
+        ultrasonic = YAML.split("- platform: ultrasonic", 1)[1].split(
+            "- platform: ezo", 1
+        )[0]
+        self.assertIn("script.execute: ${id_prefix}_publish_reservoir", ultrasonic)
+
+        publication = YAML.split(
+            "  - id: ${id_prefix}_publish_reservoir\n", 1
+        )[1].split("  - id: ${id_prefix}_read_reservoir\n", 1)[0]
+        for entity_id in (
+            "reservoir_distance",
+            "reservoir_level",
+            "reservoir_volume",
+            "reservoir_measurement_status",
+        ):
+            self.assertIn(f"id({entity_id}).publish_state", publication)
+
+    def test_calibration_changes_publish_derived_state(self):
+        number_section = YAML.split("number:", 1)[1].split("datetime:", 1)[0]
+        calibration_ids = (
+            "reservoir_full_distance",
+            "reservoir_empty_distance",
+            "reservoir_capacity",
+        )
+        for index, calibration_id in enumerate(calibration_ids):
+            block = number_section.split(f"id: {calibration_id}", 1)[1]
+            if index + 1 < len(calibration_ids):
+                block = block.split(f"id: {calibration_ids[index + 1]}", 1)[0]
+            else:
+                block = block.split("id: veg_transition", 1)[0]
+            self.assertIn("script.execute: ${id_prefix}_publish_reservoir", block)
+
+    def test_no_idle_reservoir_refresh_loop_remains(self):
+        derived = YAML.split('name: "Reservoir Distance"', 1)[1].split(
+            'name: "pH Measurement Status"', 1
+        )[0]
+        self.assertNotIn("update_interval: 15s", derived)
+
     def test_startup_and_manual_button_use_common_read_request(self):
         startup = YAML.split("on_boot:", 1)[1].split("i2c:", 1)[0]
         self.assertIn("script.execute: ${id_prefix}_read_reservoir", startup)
