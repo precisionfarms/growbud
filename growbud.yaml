@@ -58,6 +58,30 @@ globals:
   - id: last_ph_reading
     type: float
     restore_value: yes
+  - id: ph_has_valid_reading
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ph_last_success_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: ph_measurement_failed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ec_has_valid_reading
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: ec_last_success_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: ec_measurement_failed
+    type: bool
+    restore_value: no
+    initial_value: 'false'
   - id: next_run_timestamp
     type: long
     restore_value: no
@@ -96,52 +120,81 @@ sensor:
     unit_of_measurement: "pH"
     name: pH
     accuracy_decimals: 2
-    update_interval: never
+    update_interval: 60s
     i2c_id: bus_a
     on_value:
       then:
-        - globals.set:
-            id: last_ph_reading
-            value: !lambda 'return x;'
+        - lambda: |-
+            if (!std::isfinite(x)) {
+              id(ph_measurement_failed) = true;
+              ESP_LOGW("chemistry", "Ignoring invalid pH measurement.");
+              return;
+            }
+            id(last_ph_reading) = x;
+            id(ph_last_success_ms) = millis();
+            id(ph_has_valid_reading) = true;
+            id(ph_measurement_failed) = false;
   - platform: ezo
     id: ec_ezo
     address: 0x64
     # This is for the primary conductivity reading
-    update_interval: never
+    update_interval: 60s
     i2c_id: bus_a
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isfinite(x)) {
+              id(ec_measurement_failed) = true;
+              ESP_LOGW("chemistry", "Ignoring invalid conductivity measurement.");
+              return;
+            }
+            id(ec_value).publish_state(x);
+            id(ec_last_success_ms) = millis();
+            id(ec_has_valid_reading) = true;
+            id(ec_measurement_failed) = false;
     on_custom: 
       then:
         - lambda: !lambda |-
             ESP_LOGD("custom", "Received custom response from EC sensor: %s", x.c_str());
-            std::string csv_string = x.c_str();
-            std::vector<std::string> parts;            
-            char * token;
-            char seps[] = ",";
-            token = strtok (&csv_string[0],seps);
-            while (token != NULL)
-            {
-              parts.push_back(token);
-              token = strtok (NULL, seps);
+            id(ezo_ec_response).publish_state(x);
+
+            std::vector<std::string> parts;
+            size_t start = 0;
+            while (start <= x.size()) {
+              const size_t separator = x.find(',', start);
+              if (separator == std::string::npos) {
+                parts.push_back(x.substr(start));
+                break;
+              }
+              parts.push_back(x.substr(start, separator - start));
+              start = separator + 1;
             }
-            
-            id(ezo_ec_response).publish_state(csv_string);
-            auto test = id(test_ec);
 
-            // Publish the parsed values to the respective template sensors
-            if (parts.size() >= 4) {
-              float ec = parse_number<float>(parts[0]).value_or(0.0);
+            if (parts.size() < 4) {
+              id(ec_measurement_failed) = true;
+              ESP_LOGW("chemistry", "Ignoring incomplete EC response: '%s'", x.c_str());
+              return;
+            }
 
-              id(ec_value).publish_state(ec);
+            const auto ec = parse_number<float>(parts[0]);
+            const auto tds = parse_number<float>(parts[1]);
+            const auto salinity = parse_number<float>(parts[2]);
+            const auto sg = parse_number<float>(parts[3]);
+            if (!ec.has_value() || !tds.has_value() || !salinity.has_value() || !sg.has_value() ||
+                !std::isfinite(*ec) || !std::isfinite(*tds) ||
+                !std::isfinite(*salinity) || !std::isfinite(*sg)) {
+              id(ec_measurement_failed) = true;
+              ESP_LOGW("chemistry", "Ignoring malformed EC response: '%s'", x.c_str());
+              return;
+            }
 
-              float tds = parse_number<float>(parts[1]).value_or(0.0);
-              id(tds_value).publish_state(tds);
-              
-              float salinity = parse_number<float>(parts[2]).value_or(0.0);
-              id(salinity_value).publish_state(salinity);
-
-              float sg = parse_number<float>(parts[3]).value_or(0.0);
-              id(sg_value).publish_state(sg);
-            }               
+            id(ec_value).publish_state(*ec);
+            id(tds_value).publish_state(*tds);
+            id(salinity_value).publish_state(*salinity);
+            id(sg_value).publish_state(*sg);
+            id(ec_last_success_ms) = millis();
+            id(ec_has_valid_reading) = true;
+            id(ec_measurement_failed) = false;
   - platform: template
     id: ec_value
     name: ${name_prefix} Conductivity (EC)
@@ -171,6 +224,22 @@ sensor:
     update_interval: 60s # Updates the dashboard entity every minute
 
 text_sensor:
+  - platform: template
+    name: "pH Measurement Status"
+    id: ph_measurement_status
+    update_interval: 15s
+    lambda: |-
+      if (!id(ph_has_valid_reading) || id(ph_measurement_failed)) return {"Unavailable"};
+      if (static_cast<uint32_t>(millis() - id(ph_last_success_ms)) > 180000U) return {"Stale"};
+      return {"Valid"};
+  - platform: template
+    name: "EC Measurement Status"
+    id: ec_measurement_status
+    update_interval: 15s
+    lambda: |-
+      if (!id(ec_has_valid_reading) || id(ec_measurement_failed)) return {"Unavailable"};
+      if (static_cast<uint32_t>(millis() - id(ec_last_success_ms)) > 180000U) return {"Stale"};
+      return {"Valid"};
   - platform: template
     name: "EZO EC Response"
     id: ezo_ec_response 
@@ -733,16 +802,7 @@ script:
           id(${id_prefix}_pump_switch).turn_off();
           id(${id_prefix}_pump_run_active) = false;
           ESP_LOGI("pump", "Pump turned off after bounded run.");
-
-          id(ph_ezo).send_custom("R");
-          auto ph = id(ph_ezo).state;
-          auto target = id(ph_target).state;
-
-          if (ph > target) {
-            ESP_LOGD("main", "Dosing Down. Current pH: %.3f", ph);
-          } else if (ph < target) {
-            ESP_LOGD("main", "Dosing Up. Current pH: %.3f", ph);
-          }
+      - component.update: ph_ezo
   - id: ${id_prefix}_script2
     then:
       lambda: !lambda |-
