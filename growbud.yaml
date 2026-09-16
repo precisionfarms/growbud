@@ -322,14 +322,18 @@ number:
 
             if(year > 0){
               int days_to_add = x; // Add 7 days
-              std::tm calculated_date{};
-              calculated_date.tm_year = year - 1900;
-              calculated_date.tm_mon = month - 1;
-              calculated_date.tm_mday = day + days_to_add;
-              calculated_date.tm_isdst = -1;
-              time_t timestamp = mktime(&calculated_date);
-              
-              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              ESPTime calculated_date{};
+              calculated_date.year = year;
+              calculated_date.month = month;
+              calculated_date.day_of_month = day;
+              calculated_date.recalc_timestamp_local();
+              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
+              for (int i = 0; i < days_to_add; i++) esptime_local.increment_day();
+              esptime_local.hour = 0;
+              esptime_local.minute = 0;
+              esptime_local.second = 0;
+              esptime_local.recalc_timestamp_local();
+              time_t timestamp = esptime_local.timestamp;
               std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
               
               ESP_LOGD("custom", "Timestamp: %s", formatted_time.c_str());  
@@ -344,13 +348,17 @@ number:
 
               days_to_add = id(days_in_bloom).state; // Add 7 days
               calculated_date = {};
-              calculated_date.tm_year = year - 1900;
-              calculated_date.tm_mon = month - 1;
-              calculated_date.tm_mday = day + days_to_add;
-              calculated_date.tm_isdst = -1;
-              timestamp = mktime(&calculated_date);
-              
-              esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              calculated_date.year = year;
+              calculated_date.month = month;
+              calculated_date.day_of_month = day;
+              calculated_date.recalc_timestamp_local();
+              esptime_local = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
+              for (int i = 0; i < days_to_add; i++) esptime_local.increment_day();
+              esptime_local.hour = 0;
+              esptime_local.minute = 0;
+              esptime_local.second = 0;
+              esptime_local.recalc_timestamp_local();
+              timestamp = esptime_local.timestamp;
               formatted_time = esptime_local.strftime("%Y-%m-%d");
               
               ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
@@ -388,14 +396,18 @@ number:
               ESP_LOGI("main", "Value of my datetime: %04d-%02d-%02d", year, month, day);
 
               int days_to_add = x; // Add 7 days
-              std::tm calculated_date{};
-              calculated_date.tm_year = year - 1900;
-              calculated_date.tm_mon = month - 1;
-              calculated_date.tm_mday = day + days_to_add;
-              calculated_date.tm_isdst = -1;
-              time_t timestamp = mktime(&calculated_date);
-              
-              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
+              ESPTime calculated_date{};
+              calculated_date.year = year;
+              calculated_date.month = month;
+              calculated_date.day_of_month = day;
+              calculated_date.recalc_timestamp_local();
+              ESPTime esptime_local = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
+              for (int i = 0; i < days_to_add; i++) esptime_local.increment_day();
+              esptime_local.hour = 0;
+              esptime_local.minute = 0;
+              esptime_local.second = 0;
+              esptime_local.recalc_timestamp_local();
+              time_t timestamp = esptime_local.timestamp;
               formatted_time = esptime_local.strftime("%Y-%m-%d");
               
               ESP_LOGD("custom", "Harvest Date: %s", formatted_time.c_str());  
@@ -501,12 +513,15 @@ datetime:
 
               int days_to_add = days_in_veg_val; // Add 7 days
               
-              std::tm calculated_date{};
-              calculated_date.tm_year = year - 1900;
-              calculated_date.tm_mon = month - 1;
-              calculated_date.tm_mday = day_of_month + days_to_add;
-              calculated_date.tm_isdst = -1;
-              time_t timestamp = mktime(&calculated_date);
+              ESPTime calculated_date = current_date;
+              calculated_date.hour = 0;
+              calculated_date.minute = 0;
+              calculated_date.second = 0;
+              calculated_date.recalc_timestamp_local();
+              calculated_date = esphome::ESPTime::from_epoch_local(calculated_date.timestamp);
+              for (int i = 0; i < days_to_add; i++) calculated_date.increment_day();
+              calculated_date.recalc_timestamp_local();
+              time_t timestamp = calculated_date.timestamp;
               
               ESPTime esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
               std::string formatted_time = esptime_local.strftime("%Y-%m-%d");
@@ -551,12 +566,13 @@ datetime:
               ESP_LOGD("main", "Bloom Day: %d", static_cast<int>(bloom_day));
 
               days_to_add = id(days_in_bloom).state; // Add 7 days
-              calculated_date = {};
-              calculated_date.tm_year = bloom_year - 1900;
-              calculated_date.tm_mon = bloom_month - 1;
-              calculated_date.tm_mday = bloom_day + days_to_add;
-              calculated_date.tm_isdst = -1;
-              timestamp = mktime(&calculated_date);
+              calculated_date = esptime_local;
+              for (int i = 0; i < days_to_add; i++) calculated_date.increment_day();
+              calculated_date.hour = 0;
+              calculated_date.minute = 0;
+              calculated_date.second = 0;
+              calculated_date.recalc_timestamp_local();
+              timestamp = calculated_date.timestamp;
               
               esptime_local = esphome::ESPTime::from_epoch_local(timestamp);
               formatted_time = esptime_local.strftime("%Y-%m-%d");
@@ -838,14 +854,10 @@ script:
         const time_t duration_seconds =
             static_cast<time_t>(duration_hours * 3600.0f + 0.5f);
 
-        struct tm today_start_local = {};
-        today_start_local.tm_year = now.year - 1900;
-        today_start_local.tm_mon = now.month - 1;
-        today_start_local.tm_mday = now.day_of_month;
-        today_start_local.tm_hour = start_hour;
-        today_start_local.tm_min = 0;
-        today_start_local.tm_sec = 0;
-        today_start_local.tm_isdst = -1;
+        esphome::ESPTime today_start_local = now;
+        today_start_local.hour = start_hour;
+        today_start_local.minute = 0;
+        today_start_local.second = 0;
 
         const char *runtime_tz = getenv("TZ");
         ESP_LOGI("lights_tz", "Configured timezone: ${timezone}; runtime TZ: %s", runtime_tz != nullptr ? runtime_tz : "<unset>");
@@ -853,23 +865,23 @@ script:
                  now.year, now.month, now.day_of_month, now.hour, now.minute, now.second,
                  static_cast<long>(now.timestamp));
         ESP_LOGI("lights_tz", "parsed lights-on: %02d:00", start_hour);
-        ESP_LOGI("lights_tz", "tm before mktime: %04d-%02d-%02d %02d:%02d:%02d; tm_isdst: %d",
-                 today_start_local.tm_year + 1900, today_start_local.tm_mon + 1,
-                 today_start_local.tm_mday, today_start_local.tm_hour,
-                 today_start_local.tm_min, today_start_local.tm_sec,
-                 today_start_local.tm_isdst);
+        ESP_LOGI("lights_tz", "local fields before conversion: %04d-%02d-%02d %02d:%02d:%02d",
+                 today_start_local.year, today_start_local.month,
+                 today_start_local.day_of_month, today_start_local.hour,
+                 today_start_local.minute, today_start_local.second);
 
-        const time_t today_start = mktime(&today_start_local);
+        today_start_local.recalc_timestamp_local();
+        const time_t today_start = today_start_local.timestamp;
         const time_t today_off = today_start + duration_seconds;
 
         auto start_utc_diagnostic = esphome::ESPTime::from_epoch_utc(today_start);
         auto start_local_diagnostic = esphome::ESPTime::from_epoch_local(today_start);
         auto now_utc_diagnostic = esphome::ESPTime::from_epoch_utc(now.timestamp);
         auto now_local_diagnostic = esphome::ESPTime::from_epoch_local(now.timestamp);
-        ESP_LOGI("lights_tz", "mktime epoch: %ld", static_cast<long>(today_start));
-        ESP_LOGI("lights_tz", "mktime epoch as UTC: %s",
+        ESP_LOGI("lights_tz", "local conversion epoch: %ld", static_cast<long>(today_start));
+        ESP_LOGI("lights_tz", "local conversion epoch as UTC: %s",
                  start_utc_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
-        ESP_LOGI("lights_tz", "mktime epoch as local: %s",
+        ESP_LOGI("lights_tz", "local conversion epoch as local: %s",
                  start_local_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
         ESP_LOGI("lights_tz", "now epoch as UTC: %s",
                  now_utc_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
@@ -882,11 +894,14 @@ script:
             now.timestamp >= today_start && now.timestamp < today_off;
 
         if (now.timestamp < today_start) {
-          struct tm previous_start_local = today_start_local;
-          previous_start_local.tm_mday -= 1;
-          previous_start_local.tm_isdst = -1;
+          esphome::ESPTime previous_start_local =
+              esphome::ESPTime::from_epoch_local(today_start - 1);
+          previous_start_local.hour = start_hour;
+          previous_start_local.minute = 0;
+          previous_start_local.second = 0;
+          previous_start_local.recalc_timestamp_local();
 
-          const time_t previous_start = mktime(&previous_start_local);
+          const time_t previous_start = previous_start_local.timestamp;
           const time_t previous_off = previous_start + duration_seconds;
 
           if (now.timestamp >= previous_start && now.timestamp < previous_off) {
