@@ -44,6 +44,71 @@ MeasurementStatus ChemistryState::ec_status(uint32_t now_ms) const {
   return status_(this->ec_valid_, this->ec_failed_, this->ec_last_success_ms_, now_ms);
 }
 
+bool ReservoirState::record_distance(float distance_cm, uint32_t now_ms) {
+  if (!std::isfinite(distance_cm) || distance_cm < RESERVOIR_MIN_DISTANCE_CM ||
+      distance_cm > RESERVOIR_MAX_DISTANCE_CM)
+    return false;
+  this->samples_[this->next_sample_] = distance_cm;
+  this->next_sample_ = (this->next_sample_ + 1) % 3;
+  if (this->sample_count_ < 3)
+    this->sample_count_++;
+  this->last_success_ms_ = now_ms;
+  this->update_median_();
+  return true;
+}
+
+void ReservoirState::update_median_() {
+  float sorted[3];
+  for (uint8_t i = 0; i < this->sample_count_; i++)
+    sorted[i] = this->samples_[i];
+  for (uint8_t i = 1; i < this->sample_count_; i++) {
+    const float value = sorted[i];
+    uint8_t position = i;
+    while (position > 0 && sorted[position - 1] > value) {
+      sorted[position] = sorted[position - 1];
+      position--;
+    }
+    sorted[position] = value;
+  }
+  if (this->sample_count_ == 2)
+    this->filtered_distance_cm_ = (sorted[0] + sorted[1]) / 2.0f;
+  else
+    this->filtered_distance_cm_ = sorted[this->sample_count_ / 2];
+}
+
+bool ReservoirState::valid_calibration_(float full_distance_cm, float empty_distance_cm) {
+  return std::isfinite(full_distance_cm) && std::isfinite(empty_distance_cm) &&
+         full_distance_cm < empty_distance_cm;
+}
+
+MeasurementStatus ReservoirState::status(uint32_t now_ms, float full_distance_cm, float empty_distance_cm) const {
+  if (!this->has_accepted_distance() || !valid_calibration_(full_distance_cm, empty_distance_cm))
+    return MeasurementStatus::UNAVAILABLE;
+  if (static_cast<uint32_t>(now_ms - this->last_success_ms_) > RESERVOIR_FRESHNESS_MS)
+    return MeasurementStatus::STALE;
+  return MeasurementStatus::VALID;
+}
+
+float ReservoirState::level_fraction(float full_distance_cm, float empty_distance_cm) const {
+  if (!this->has_accepted_distance() || !valid_calibration_(full_distance_cm, empty_distance_cm))
+    return NAN;
+  const float fraction = (empty_distance_cm - this->filtered_distance_cm_) /
+                         (empty_distance_cm - full_distance_cm);
+  if (fraction < 0.0f)
+    return 0.0f;
+  if (fraction > 1.0f)
+    return 1.0f;
+  return fraction;
+}
+
+float ReservoirState::volume_gallons(float full_distance_cm, float empty_distance_cm,
+                                     float capacity_gallons) const {
+  const float fraction = this->level_fraction(full_distance_cm, empty_distance_cm);
+  if (!std::isfinite(fraction) || !std::isfinite(capacity_gallons) || capacity_gallons < 0.0f)
+    return NAN;
+  return fraction * capacity_gallons;
+}
+
 int PumpState::bounded_duration_seconds(int requested_seconds) {
   if (requested_seconds < 1)
     return 1;

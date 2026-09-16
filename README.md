@@ -7,6 +7,8 @@ substitutions:
   id_prefix: tent_1
   name_prefix: "Tent 1"
   growbud_component_source: github://precisionfarms/growbud@main
+  reservoir_trigger_pin: GPIO32
+  reservoir_echo_pin: GPIO33
 
 packages:
   growbud:
@@ -63,3 +65,17 @@ Compile the representative firmware:
 ```
 
 GrowBud configuration validation is tested with ESPHome 2026.8.2, the version pinned in `requirements-dev.txt`. Production device configurations should pin a released GrowBud tag rather than following `main`.
+
+## Reservoir sensor
+
+GrowBud's prototype reservoir monitor uses an HC-SR04 with GPIO32 for TRIG and
+GPIO33 for ECHO by default. Both pins are substitutions and may be overridden by
+the consuming device. Power the HC-SR04 from 5 V, connect grounds, and reduce its
+5 V ECHO output to approximately 3.3 V with an appropriate divider or level
+converter before connecting it to the ESP32. Software cannot make a direct 5 V
+ECHO connection safe.
+
+Set `Reservoir Full Distance`, `Reservoir Empty Distance`, and `Reservoir
+Capacity` for the installed reservoir. Full distance must be less than empty
+distance. Volume is a linear estimate intended for reservoirs with approximately
+constant horizontal cross-section.

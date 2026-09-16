@@ -1,6 +1,8 @@
 substitutions:
   timezone: America/Denver
   growbud_component_source: github://precisionfarms/growbud@main
+  reservoir_trigger_pin: GPIO32
+  reservoir_echo_pin: GPIO33
 
 external_components:
   - source: ${growbud_component_source}
@@ -80,6 +82,25 @@ switch:
 
 # Example configuration entry
 sensor:
+  # HC-SR04 ECHO must be level-shifted to approximately 3.3 V before this pin.
+  - platform: ultrasonic
+    id: reservoir_raw_distance
+    name: "Reservoir Raw Distance"
+    trigger_pin: ${reservoir_trigger_pin}
+    echo_pin: ${reservoir_echo_pin}
+    timeout: 2m
+    pulse_time: 10us
+    update_interval: 30s
+    unit_of_measurement: "cm"
+    accuracy_decimals: 1
+    filters:
+      - multiply: 100
+    on_value:
+      then:
+        - lambda: |-
+            if (!id(growbud_controller).reservoir().record_distance(x, millis())) {
+              ESP_LOGW("reservoir", "Ignoring invalid reservoir distance.");
+            }
   - platform: ezo
     id: ph_ezo
     address: 0x63
@@ -178,8 +199,49 @@ sensor:
       if (!id(growbud_controller).chemistry().has_valid_ph()) return NAN;
       return id(growbud_controller).chemistry().last_ph();
     update_interval: 60s # Updates the dashboard entity every minute
+  - platform: template
+    name: "Reservoir Distance"
+    id: reservoir_distance
+    unit_of_measurement: "cm"
+    accuracy_decimals: 1
+    state_class: measurement
+    update_interval: 15s
+    lambda: |-
+      if (!id(growbud_controller).reservoir().has_accepted_distance()) return NAN;
+      return id(growbud_controller).reservoir().distance_cm();
+  - platform: template
+    name: "Reservoir Level"
+    id: reservoir_level
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    state_class: measurement
+    update_interval: 15s
+    lambda: |-
+      const float level = id(growbud_controller).reservoir().level_fraction(
+          id(reservoir_full_distance).state, id(reservoir_empty_distance).state);
+      return std::isfinite(level) ? level * 100.0f : NAN;
+  - platform: template
+    name: "Reservoir Volume"
+    id: reservoir_volume
+    unit_of_measurement: "gal"
+    accuracy_decimals: 2
+    state_class: measurement
+    update_interval: 15s
+    lambda: |-
+      return id(growbud_controller).reservoir().volume_gallons(
+          id(reservoir_full_distance).state, id(reservoir_empty_distance).state,
+          id(reservoir_capacity).state);
 
 text_sensor:
+  - platform: template
+    name: "Reservoir Measurement Status"
+    id: reservoir_measurement_status
+    update_interval: 15s
+    lambda: |-
+      return {esphome::growbud::measurement_status_string(
+          id(growbud_controller).reservoir().status(
+              millis(), id(reservoir_full_distance).state,
+              id(reservoir_empty_distance).state))};
   - platform: template
     name: "pH Measurement Status"
     id: ph_measurement_status
@@ -282,6 +344,39 @@ interval:
 
 
 number:
+  - platform: template
+    id: reservoir_full_distance
+    name: "Reservoir Full Distance"
+    unit_of_measurement: "cm"
+    min_value: 2
+    max_value: 199
+    step: 0.1
+    initial_value: 10
+    mode: box
+    optimistic: true
+    restore_value: true
+  - platform: template
+    id: reservoir_empty_distance
+    name: "Reservoir Empty Distance"
+    unit_of_measurement: "cm"
+    min_value: 3
+    max_value: 200
+    step: 0.1
+    initial_value: 50
+    mode: box
+    optimistic: true
+    restore_value: true
+  - platform: template
+    id: reservoir_capacity
+    name: "Reservoir Capacity"
+    unit_of_measurement: "gal"
+    min_value: 0.1
+    max_value: 500
+    step: 0.1
+    initial_value: 20
+    mode: box
+    optimistic: true
+    restore_value: true
   - platform: template
     id: veg_transition
     min_value: 0

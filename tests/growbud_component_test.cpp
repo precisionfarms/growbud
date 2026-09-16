@@ -110,6 +110,57 @@ void test_irrigation_and_pump() {
   assert(pump.watchdog_should_stop(true, 59000));
 }
 
+void test_reservoir() {
+  ReservoirState reservoir;
+  assert(reservoir.status(0, 10.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
+  assert(std::isnan(reservoir.level_fraction(10.0f, 50.0f)));
+  assert(std::isnan(reservoir.volume_gallons(10.0f, 50.0f, 20.0f)));
+
+  assert(reservoir.record_distance(10.0f, 1000));
+  assert(reservoir.level_fraction(10.0f, 50.0f) == 1.0f);
+  assert(reservoir.volume_gallons(10.0f, 50.0f, 20.0f) == 20.0f);
+  assert(reservoir.status(121000, 10.0f, 50.0f) == MeasurementStatus::VALID);
+  assert(reservoir.status(121001, 10.0f, 50.0f) == MeasurementStatus::STALE);
+
+  ReservoirState empty;
+  assert(empty.record_distance(50.0f, 1000));
+  assert(empty.level_fraction(10.0f, 50.0f) == 0.0f);
+  ReservoirState midpoint;
+  assert(midpoint.record_distance(30.0f, 1000));
+  assert(std::fabs(midpoint.level_fraction(10.0f, 50.0f) - 0.5f) < 0.0001f);
+  assert(midpoint.volume_gallons(10.0f, 50.0f, 20.0f) == 10.0f);
+  ReservoirState three_quarters;
+  assert(three_quarters.record_distance(20.0f, 1000));
+  assert(three_quarters.volume_gallons(10.0f, 50.0f, 20.0f) == 15.0f);
+
+  ReservoirState clamped_full;
+  assert(clamped_full.record_distance(5.0f, 1000));
+  assert(clamped_full.level_fraction(10.0f, 50.0f) == 1.0f);
+  ReservoirState clamped_empty;
+  assert(clamped_empty.record_distance(60.0f, 1000));
+  assert(clamped_empty.level_fraction(10.0f, 50.0f) == 0.0f);
+  assert(std::isnan(midpoint.level_fraction(50.0f, 50.0f)));
+  assert(midpoint.status(1001, 50.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
+
+  ReservoirState filtered;
+  assert(filtered.record_distance(30.0f, 1000));
+  assert(filtered.record_distance(31.0f, 2000));
+  assert(filtered.record_distance(100.0f, 3000));
+  assert(filtered.distance_cm() == 31.0f);
+  assert(!filtered.record_distance(NAN, 4000));
+  assert(!filtered.record_distance(1.0f, 4000));
+  assert(!filtered.record_distance(201.0f, 4000));
+  assert(filtered.distance_cm() == 31.0f);
+  assert(filtered.status(123001, 10.0f, 50.0f) == MeasurementStatus::STALE);
+  assert(filtered.record_distance(32.0f, 123002));
+  assert(filtered.status(123003, 10.0f, 50.0f) == MeasurementStatus::VALID);
+
+  ReservoirState rollover;
+  assert(rollover.record_distance(30.0f, UINT32_MAX - 60000U));
+  assert(rollover.status(59999U, 10.0f, 50.0f) == MeasurementStatus::VALID);
+  assert(rollover.status(60000U, 10.0f, 50.0f) == MeasurementStatus::STALE);
+}
+
 }  // namespace
 
 int main() {
@@ -120,4 +171,5 @@ int main() {
   test_grow_cycle();
   test_chemistry();
   test_irrigation_and_pump();
+  test_reservoir();
 }
