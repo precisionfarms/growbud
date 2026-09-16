@@ -1,9 +1,9 @@
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
-import subprocess
-import tempfile
 from zoneinfo import ZoneInfo
+
+import esphome
 
 
 ZONE = ZoneInfo("America/Denver")
@@ -31,6 +31,18 @@ class GrowBudTimezoneTests(unittest.TestCase):
             self.assertEqual(local.utcoffset(), timedelta(hours=expected_offset_hours))
             self.assertEqual(local_epoch(day), expected_epoch)
 
+    def test_lighting_local_civil_conversion_and_dst(self):
+        summer = datetime(2026, 9, 15, 5, tzinfo=ZONE)
+        winter = datetime(2026, 1, 15, 5, tzinfo=ZONE)
+
+        self.assertEqual(int(summer.timestamp()), 1789470000)
+        self.assertEqual(summer.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M"), "2026-09-15 11:00")
+        self.assertEqual(int(winter.timestamp()), 1768478400)
+        self.assertEqual(winter.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M"), "2026-01-15 12:00")
+
+        bloom_off = datetime.fromtimestamp(int(summer.timestamp()) + 13 * 3600, ZONE)
+        self.assertEqual(bloom_off.strftime("%Y-%m-%d %H:%M"), "2026-09-15 18:00")
+
     def test_start_bloom_and_harvest_calendar_dates(self):
         start = date(2026, 9, 15)
         bloom = start + timedelta(days=30)
@@ -49,6 +61,12 @@ class GrowBudTimezoneTests(unittest.TestCase):
         self.assertEqual(bloom, date(2026, 3, 17))
         self.assertEqual((bloom_local.hour, bloom_local.utcoffset()), (0, timedelta(hours=-6)))
 
+        fall_start = date(2026, 10, 15)
+        fall_harvest = fall_start + timedelta(days=30)
+        fall_local = datetime(fall_harvest.year, fall_harvest.month, fall_harvest.day, tzinfo=ZONE)
+        self.assertEqual(fall_harvest, date(2026, 11, 14))
+        self.assertEqual((fall_local.hour, fall_local.utcoffset()), (0, timedelta(hours=-7)))
+
     def test_overnight_lighting_window_on_both_sides_of_midnight(self):
         def local(day: int, hour: int, minute: int) -> datetime:
             return datetime(2026, 9, day, hour, minute, tzinfo=ZONE)
@@ -60,30 +78,23 @@ class GrowBudTimezoneTests(unittest.TestCase):
 
     def test_sntp_owns_the_single_configured_timezone(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
-        self.assertEqual(source.count("mktime("), 7)
+        self.assertNotIn("mktime(", source)
+        self.assertIn("recalc_timestamp_local()", source)
         self.assertNotIn("set_timezone(", source)
-        self.assertEqual(source.count("timezone:"), 2)
+        self.assertEqual(sum(line.lstrip().startswith("timezone:") for line in source.splitlines()), 2)
         self.assertIn("timezone: ${timezone}", source)
 
-    def test_growbud_cpp_local_time_semantics(self):
-        root = Path(__file__).parents[1]
-        esphome_core = root / ".venv/lib/python3.9/site-packages/esphome/core"
-        with tempfile.TemporaryDirectory() as temp_dir:
-            executable = Path(temp_dir) / "timezone_semantics"
-            subprocess.run(
-                [
-                    "c++",
-                    "-std=c++17",
-                    str(root / "tests/timezone_semantics.cpp"),
-                    str(esphome_core / "time.cpp"),
-                    "-I",
-                    str(esphome_core.parent.parent),
-                    "-o",
-                    str(executable),
-                ],
-                check=True,
-            )
-            subprocess.run([str(executable)], check=True)
+    def test_esphome_local_conversion_uses_parsed_timezone(self):
+        esphome_package = Path(esphome.__file__).parent
+        time_cpp = (esphome_package / "core/time.cpp").read_text()
+        rtc_cpp = (esphome_package / "components/time/real_time_clock.cpp").read_text()
+
+        local_conversion = time_cpp.split("void ESPTime::recalc_timestamp_local()", 1)[1]
+        local_conversion = local_conversion.split("int32_t ESPTime::timezone_offset()", 1)[0]
+        self.assertIn("time::get_global_tz()", local_conversion)
+        self.assertIn("time::is_in_dst", local_conversion)
+        self.assertNotIn("::mktime(", local_conversion)
+        self.assertIn("set_global_tz(parsed)", rtc_cpp)
 
 
 if __name__ == "__main__":

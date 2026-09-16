@@ -859,34 +859,9 @@ script:
         today_start_local.minute = 0;
         today_start_local.second = 0;
 
-        const char *runtime_tz = getenv("TZ");
-        ESP_LOGI("lights_tz", "Configured timezone: ${timezone}; runtime TZ: %s", runtime_tz != nullptr ? runtime_tz : "<unset>");
-        ESP_LOGI("lights_tz", "now fields: %04d-%02d-%02d %02d:%02d:%02d; epoch: %ld",
-                 now.year, now.month, now.day_of_month, now.hour, now.minute, now.second,
-                 static_cast<long>(now.timestamp));
-        ESP_LOGI("lights_tz", "parsed lights-on: %02d:00", start_hour);
-        ESP_LOGI("lights_tz", "local fields before conversion: %04d-%02d-%02d %02d:%02d:%02d",
-                 today_start_local.year, today_start_local.month,
-                 today_start_local.day_of_month, today_start_local.hour,
-                 today_start_local.minute, today_start_local.second);
-
         today_start_local.recalc_timestamp_local();
         const time_t today_start = today_start_local.timestamp;
         const time_t today_off = today_start + duration_seconds;
-
-        auto start_utc_diagnostic = esphome::ESPTime::from_epoch_utc(today_start);
-        auto start_local_diagnostic = esphome::ESPTime::from_epoch_local(today_start);
-        auto now_utc_diagnostic = esphome::ESPTime::from_epoch_utc(now.timestamp);
-        auto now_local_diagnostic = esphome::ESPTime::from_epoch_local(now.timestamp);
-        ESP_LOGI("lights_tz", "local conversion epoch: %ld", static_cast<long>(today_start));
-        ESP_LOGI("lights_tz", "local conversion epoch as UTC: %s",
-                 start_utc_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
-        ESP_LOGI("lights_tz", "local conversion epoch as local: %s",
-                 start_local_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
-        ESP_LOGI("lights_tz", "now epoch as UTC: %s",
-                 now_utc_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
-        ESP_LOGI("lights_tz", "now epoch as local: %s",
-                 now_local_diagnostic.strftime("%Y-%m-%d %H:%M:%S").c_str());
 
         time_t window_start = today_start;
         time_t window_off = today_off;
