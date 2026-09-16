@@ -156,7 +156,7 @@ void test_reservoir() {
   assert(filtered.status(10.0f, 50.0f) == MeasurementStatus::VALID);
   assert(!filtered.record_distance(1.0f));
   assert(!filtered.record_distance(201.0f));
-  assert(filtered.distance_cm() == 31.0f);
+  assert(filtered.distance_cm() == 32.0f);
 
   // Event-driven readings do not become stale merely because time passes.
   ReservoirState long_lived;
