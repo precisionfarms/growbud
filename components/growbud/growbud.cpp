@@ -44,15 +44,18 @@ MeasurementStatus ChemistryState::ec_status(uint32_t now_ms) const {
   return status_(this->ec_valid_, this->ec_failed_, this->ec_last_success_ms_, now_ms);
 }
 
-bool ReservoirState::record_distance(float distance_cm, uint32_t now_ms) {
+bool ReservoirState::record_distance(float distance_cm) {
+  this->measurement_pending_ = false;
   if (!std::isfinite(distance_cm) || distance_cm < RESERVOIR_MIN_DISTANCE_CM ||
-      distance_cm > RESERVOIR_MAX_DISTANCE_CM)
+      distance_cm > RESERVOIR_MAX_DISTANCE_CM) {
+    this->measurement_failed_ = true;
     return false;
+  }
   this->samples_[this->next_sample_] = distance_cm;
   this->next_sample_ = (this->next_sample_ + 1) % 3;
   if (this->sample_count_ < 3)
     this->sample_count_++;
-  this->last_success_ms_ = now_ms;
+  this->measurement_failed_ = false;
   this->update_median_();
   return true;
 }
@@ -81,10 +84,10 @@ bool ReservoirState::valid_calibration_(float full_distance_cm, float empty_dist
          full_distance_cm < empty_distance_cm;
 }
 
-MeasurementStatus ReservoirState::status(uint32_t now_ms, float full_distance_cm, float empty_distance_cm) const {
+MeasurementStatus ReservoirState::status(float full_distance_cm, float empty_distance_cm) const {
   if (!this->has_accepted_distance() || !valid_calibration_(full_distance_cm, empty_distance_cm))
     return MeasurementStatus::UNAVAILABLE;
-  if (static_cast<uint32_t>(now_ms - this->last_success_ms_) > RESERVOIR_FRESHNESS_MS)
+  if (this->measurement_failed_)
     return MeasurementStatus::STALE;
   return MeasurementStatus::VALID;
 }

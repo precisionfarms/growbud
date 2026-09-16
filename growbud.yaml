@@ -3,6 +3,7 @@ substitutions:
   growbud_component_source: github://precisionfarms/growbud@main
   reservoir_trigger_pin: GPIO32
   reservoir_echo_pin: GPIO33
+  reservoir_settling_delay: 60s
 
 external_components:
   - source: ${growbud_component_source}
@@ -13,6 +14,12 @@ external_components:
 
 growbud:
   id: growbud_controller
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - script.execute: ${id_prefix}_read_reservoir
 
 i2c:
   sda: GPIO18
@@ -88,11 +95,12 @@ switch:
       - lambda: |-
           id(${id_prefix}_run_pump).execute(static_cast<int>(id(pump_duration).state));
     turn_off_action:
-      - script.stop: ${id_prefix}_run_pump
-      - switch.turn_off: ${id_prefix}_pump_switch
-      - lambda: |-
-          id(growbud_controller).pump().complete();
-      - component.update: ph_ezo
+      - if:
+          condition:
+            switch.is_on: ${id_prefix}_pump_switch
+          then:
+            - script.stop: ${id_prefix}_run_pump
+            - script.execute: ${id_prefix}_complete_pump_run
   - platform: gpio    
     pin: GPIO27
     id: ${id_prefix}_light_switch
@@ -108,7 +116,7 @@ sensor:
     echo_pin: ${reservoir_echo_pin}
     timeout: 2m
     pulse_time: 10us
-    update_interval: 30s
+    update_interval: never
     unit_of_measurement: "cm"
     accuracy_decimals: 1
     filters:
@@ -116,7 +124,7 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            if (!id(growbud_controller).reservoir().record_distance(x, millis())) {
+            if (!id(growbud_controller).reservoir().record_distance(x)) {
               ESP_LOGW("reservoir", "Ignoring invalid reservoir distance.");
             }
   - platform: ezo
@@ -258,7 +266,7 @@ text_sensor:
     lambda: |-
       return {esphome::growbud::measurement_status_string(
           id(growbud_controller).reservoir().status(
-              millis(), id(reservoir_full_distance).state,
+              id(reservoir_full_distance).state,
               id(reservoir_empty_distance).state))};
   - platform: template
     name: "pH Measurement Status"
@@ -313,12 +321,18 @@ interval:
   - interval: 1s
     id: ${id_prefix}_pump_watchdog
     then:
-      - lambda: |-
-          if (id(growbud_controller).pump().watchdog_should_stop(
-                  id(${id_prefix}_pump_switch).state, millis())) {
-            ESP_LOGE("pump", "Pump maximum runtime exceeded; forcing pump off.");
-            id(${id_prefix}_pump_switch).turn_off();
-          }
+      - if:
+          condition:
+            lambda: |-
+              return id(growbud_controller).pump().watchdog_should_stop(
+                  id(${id_prefix}_pump_switch).state, millis());
+          then:
+            - logger.log:
+                level: ERROR
+                tag: pump
+                format: "Pump maximum runtime exceeded; forcing pump off."
+            - script.stop: ${id_prefix}_run_pump
+            - script.execute: ${id_prefix}_complete_pump_run
   - interval: 30min    
     startup_delay: 
       minutes: 20
@@ -626,6 +640,12 @@ select:
             
 button:  
   - platform: template
+    name: "Read Reservoir"
+    id: ${id_prefix}_read_reservoir_button
+    on_press:
+      then:
+        - script.execute: ${id_prefix}_read_reservoir
+  - platform: template
     name: "Run Pump"
     id: ${id_prefix}_run_pump_button
     on_press:
@@ -673,6 +693,26 @@ button:
 
 
 script:
+  - id: ${id_prefix}_read_reservoir
+    mode: restart
+    then:
+      - lambda: |-
+          id(growbud_controller).reservoir().measurement_requested();
+      - component.update: reservoir_raw_distance
+  - id: ${id_prefix}_post_pump_reservoir
+    mode: restart
+    then:
+      - delay: ${reservoir_settling_delay}
+      - script.execute: ${id_prefix}_read_reservoir
+  - id: ${id_prefix}_complete_pump_run
+    mode: restart
+    then:
+      - switch.turn_off: ${id_prefix}_pump_switch
+      - lambda: |-
+          id(growbud_controller).pump().complete();
+          ESP_LOGI("pump", "Pump turned off after bounded run.");
+      - component.update: ph_ezo
+      - script.execute: ${id_prefix}_post_pump_reservoir
   - id: ${id_prefix}_run_pump
     mode: single
     parameters:
@@ -686,11 +726,7 @@ script:
           ESP_LOGI("pump", "Pump running for %d seconds.", bounded_duration_seconds);
       - delay: !lambda |-
           return id(growbud_controller).pump().maximum_runtime_ms();
-      - lambda: |-
-          id(${id_prefix}_pump_switch).turn_off();
-          id(growbud_controller).pump().complete();
-          ESP_LOGI("pump", "Pump turned off after bounded run.");
-      - component.update: ph_ezo
+      - script.execute: ${id_prefix}_complete_pump_run
   - id: ${id_prefix}_script2
     then:
       lambda: !lambda |-

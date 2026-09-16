@@ -63,11 +63,11 @@ class GrowBudChemistryTests(unittest.TestCase):
 
     def test_post_pump_requests_async_read_without_consuming_state(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
-        pump_script = source.split("id: ${id_prefix}_run_pump", 1)[1]
-        pump_script = pump_script.split("id: ${id_prefix}_script2", 1)[0]
-        self.assertIn("component.update: ph_ezo", pump_script)
-        self.assertNotIn("id(ph_ezo).state", pump_script)
-        self.assertNotIn('send_custom("R")', pump_script)
+        completion = source.split("id: ${id_prefix}_complete_pump_run", 1)[1]
+        completion = completion.split("id: ${id_prefix}_run_pump", 1)[0]
+        self.assertIn("component.update: ph_ezo", completion)
+        self.assertNotIn("id(ph_ezo).state", completion)
+        self.assertNotIn('send_custom("R")', completion)
 
     def test_native_polling_and_no_fake_zero_fallback(self):
         source = (Path(__file__).parents[1] / "growbud.yaml").read_text()

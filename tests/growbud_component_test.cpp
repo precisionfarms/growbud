@@ -112,53 +112,61 @@ void test_irrigation_and_pump() {
 
 void test_reservoir() {
   ReservoirState reservoir;
-  assert(reservoir.status(0, 10.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
+  assert(reservoir.status(10.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
   assert(std::isnan(reservoir.level_fraction(10.0f, 50.0f)));
   assert(std::isnan(reservoir.volume_gallons(10.0f, 50.0f, 20.0f)));
 
-  assert(reservoir.record_distance(10.0f, 1000));
+  reservoir.measurement_requested();
+  assert(reservoir.record_distance(10.0f));
   assert(reservoir.level_fraction(10.0f, 50.0f) == 1.0f);
   assert(reservoir.volume_gallons(10.0f, 50.0f, 20.0f) == 20.0f);
-  assert(reservoir.status(121000, 10.0f, 50.0f) == MeasurementStatus::VALID);
-  assert(reservoir.status(121001, 10.0f, 50.0f) == MeasurementStatus::STALE);
+  assert(reservoir.status(10.0f, 50.0f) == MeasurementStatus::VALID);
 
   ReservoirState empty;
-  assert(empty.record_distance(50.0f, 1000));
+  assert(empty.record_distance(50.0f));
   assert(empty.level_fraction(10.0f, 50.0f) == 0.0f);
   ReservoirState midpoint;
-  assert(midpoint.record_distance(30.0f, 1000));
+  assert(midpoint.record_distance(30.0f));
   assert(std::fabs(midpoint.level_fraction(10.0f, 50.0f) - 0.5f) < 0.0001f);
   assert(midpoint.volume_gallons(10.0f, 50.0f, 20.0f) == 10.0f);
   ReservoirState three_quarters;
-  assert(three_quarters.record_distance(20.0f, 1000));
+  assert(three_quarters.record_distance(20.0f));
   assert(three_quarters.volume_gallons(10.0f, 50.0f, 20.0f) == 15.0f);
 
   ReservoirState clamped_full;
-  assert(clamped_full.record_distance(5.0f, 1000));
+  assert(clamped_full.record_distance(5.0f));
   assert(clamped_full.level_fraction(10.0f, 50.0f) == 1.0f);
   ReservoirState clamped_empty;
-  assert(clamped_empty.record_distance(60.0f, 1000));
+  assert(clamped_empty.record_distance(60.0f));
   assert(clamped_empty.level_fraction(10.0f, 50.0f) == 0.0f);
   assert(std::isnan(midpoint.level_fraction(50.0f, 50.0f)));
-  assert(midpoint.status(1001, 50.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
+  assert(midpoint.status(50.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
 
   ReservoirState filtered;
-  assert(filtered.record_distance(30.0f, 1000));
-  assert(filtered.record_distance(31.0f, 2000));
-  assert(filtered.record_distance(100.0f, 3000));
+  assert(filtered.record_distance(30.0f));
+  assert(filtered.record_distance(31.0f));
+  assert(filtered.record_distance(100.0f));
   assert(filtered.distance_cm() == 31.0f);
-  assert(!filtered.record_distance(NAN, 4000));
-  assert(!filtered.record_distance(1.0f, 4000));
-  assert(!filtered.record_distance(201.0f, 4000));
+  filtered.measurement_requested();
+  assert(!filtered.record_distance(NAN));
   assert(filtered.distance_cm() == 31.0f);
-  assert(filtered.status(123001, 10.0f, 50.0f) == MeasurementStatus::STALE);
-  assert(filtered.record_distance(32.0f, 123002));
-  assert(filtered.status(123003, 10.0f, 50.0f) == MeasurementStatus::VALID);
+  assert(filtered.status(10.0f, 50.0f) == MeasurementStatus::STALE);
+  filtered.measurement_requested();
+  assert(filtered.record_distance(32.0f));
+  assert(filtered.status(10.0f, 50.0f) == MeasurementStatus::VALID);
+  assert(!filtered.record_distance(1.0f));
+  assert(!filtered.record_distance(201.0f));
+  assert(filtered.distance_cm() == 31.0f);
 
-  ReservoirState rollover;
-  assert(rollover.record_distance(30.0f, UINT32_MAX - 60000U));
-  assert(rollover.status(59999U, 10.0f, 50.0f) == MeasurementStatus::VALID);
-  assert(rollover.status(60000U, 10.0f, 50.0f) == MeasurementStatus::STALE);
+  // Event-driven readings do not become stale merely because time passes.
+  ReservoirState long_lived;
+  assert(long_lived.record_distance(30.0f));
+  assert(long_lived.status(10.0f, 50.0f) == MeasurementStatus::VALID);
+
+  ReservoirState failed_startup;
+  failed_startup.measurement_requested();
+  assert(!failed_startup.record_distance(NAN));
+  assert(failed_startup.status(10.0f, 50.0f) == MeasurementStatus::UNAVAILABLE);
 }
 
 }  // namespace

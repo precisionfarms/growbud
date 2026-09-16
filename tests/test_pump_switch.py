@@ -45,16 +45,20 @@ class GrowBudManualPumpSwitchTests(unittest.TestCase):
     def test_manual_off_stops_and_synchronizes_the_guarded_run(self):
         off_action = self.manual.split("turn_off_action:", 1)[1]
         self.assertIn("script.stop: ${id_prefix}_run_pump", off_action)
-        self.assertIn("switch.turn_off: ${id_prefix}_pump_switch", off_action)
-        self.assertIn("pump().complete()", off_action)
-        self.assertIn("component.update: ph_ezo", off_action)
+        self.assertIn("script.execute: ${id_prefix}_complete_pump_run", off_action)
+        completion = SOURCE.split("id: ${id_prefix}_complete_pump_run", 1)[1].split(
+            "id: ${id_prefix}_run_pump", 1
+        )[0]
+        self.assertIn("switch.turn_off: ${id_prefix}_pump_switch", completion)
+        self.assertIn("pump().complete()", completion)
+        self.assertIn("component.update: ph_ezo", completion)
 
     def test_existing_local_safety_and_entry_points_remain(self):
         watchdog = SOURCE.split("id: ${id_prefix}_pump_watchdog", 1)[1].split(
             "- interval: 30min", 1
         )[0]
         self.assertIn("watchdog_should_stop", watchdog)
-        self.assertIn("pump_switch).turn_off()", watchdog)
+        self.assertIn("script.execute: ${id_prefix}_complete_pump_run", watchdog)
         self.assertNotIn("api", watchdog.lower())
         self.assertNotIn("wifi", watchdog.lower())
         self.assertIn("mode: single", SOURCE)
