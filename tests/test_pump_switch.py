@@ -51,7 +51,10 @@ class GrowBudManualPumpSwitchTests(unittest.TestCase):
         )[0]
         self.assertIn("switch.turn_off: ${id_prefix}_pump_switch", completion)
         self.assertIn("pump().complete()", completion)
-        self.assertIn("component.update: ph_ezo", completion)
+        self.assertNotIn("component.update: ph_ezo", completion)
+        self.assertIn(
+            "script.execute: ${id_prefix}_post_irrigation_measurements", completion
+        )
 
     def test_existing_local_safety_and_entry_points_remain(self):
         watchdog = SOURCE.split("id: ${id_prefix}_pump_watchdog", 1)[1].split(

@@ -4,6 +4,7 @@ substitutions:
   reservoir_trigger_pin: GPIO32
   reservoir_echo_pin: GPIO33
   reservoir_settling_delay: 60s
+  chemistry_read_timeout: 2s
 
 external_components:
   - source: ${growbud_component_source}
@@ -137,12 +138,12 @@ sensor:
     unit_of_measurement: "pH"
     name: pH
     accuracy_decimals: 2
-    update_interval: 60s
+    update_interval: never
     i2c_id: bus_a
     on_value:
       then:
         - lambda: |-
-            if (!id(growbud_controller).chemistry().record_ph(x, millis())) {
+            if (!id(growbud_controller).chemistry().record_ph(x)) {
               ESP_LOGW("chemistry", "Ignoring invalid pH measurement.");
             } else {
               id(last_stored_ph_sensor).publish_state(
@@ -153,12 +154,12 @@ sensor:
     id: ec_ezo
     address: 0x64
     # This is for the primary conductivity reading
-    update_interval: 60s
+    update_interval: never
     i2c_id: bus_a
     on_value:
       then:
         - lambda: |-
-            if (!id(growbud_controller).chemistry().record_ec(x, millis())) {
+            if (!id(growbud_controller).chemistry().record_ec(x)) {
               ESP_LOGW("chemistry", "Ignoring invalid conductivity measurement.");
               return;
             }
@@ -183,7 +184,6 @@ sensor:
             }
 
             if (parts.size() < 4) {
-              id(growbud_controller).chemistry().mark_ec_failed();
               ESP_LOGW("chemistry", "Ignoring incomplete EC response: '%s'", x.c_str());
               return;
             }
@@ -195,17 +195,13 @@ sensor:
             if (!ec.has_value() || !tds.has_value() || !salinity.has_value() || !sg.has_value() ||
                 !std::isfinite(*ec) || !std::isfinite(*tds) ||
                 !std::isfinite(*salinity) || !std::isfinite(*sg)) {
-              id(growbud_controller).chemistry().mark_ec_failed();
               ESP_LOGW("chemistry", "Ignoring malformed EC response: '%s'", x.c_str());
               return;
             }
 
-            id(ec_value).publish_state(*ec);
             id(tds_value).publish_state(*tds);
             id(salinity_value).publish_state(*salinity);
             id(sg_value).publish_state(*sg);
-            id(growbud_controller).chemistry().record_ec(*ec, millis());
-        - script.execute: ${id_prefix}_publish_chemistry_status
   - platform: template
     id: ec_value
     name: ${name_prefix} Conductivity (EC)
@@ -303,11 +299,6 @@ time:
         then:
           - script.execute: ${id_prefix}_script
 interval:
-  # Retain time-based chemistry freshness while publishing only status changes.
-  - interval: 15s
-    id: ${id_prefix}_chemistry_freshness_check
-    then:
-      - script.execute: ${id_prefix}_publish_chemistry_status
   - interval: 1s
     id: ${id_prefix}_pump_watchdog
     then:
@@ -639,6 +630,12 @@ select:
             
 button:  
   - platform: template
+    name: "Read Chemistry"
+    id: ${id_prefix}_read_chemistry_button
+    on_press:
+      then:
+        - script.execute: ${id_prefix}_read_chemistry
+  - platform: template
     name: "Read Reservoir"
     id: ${id_prefix}_read_reservoir_button
     on_press:
@@ -674,7 +671,7 @@ button:
     id: 'read_ph'
     on_press:
       then:
-        - component.update: ph_ezo       
+        - script.execute: ${id_prefix}_read_ph
   - platform: template
     name: "UART to I2C"
     id: 'uart_command'
@@ -697,14 +694,14 @@ script:
     then:
       - lambda: |-
           const std::string ph_status = esphome::growbud::measurement_status_string(
-              id(growbud_controller).chemistry().ph_status(millis()));
+              id(growbud_controller).chemistry().ph_status());
           if (!id(ph_measurement_status).has_state() ||
               id(ph_measurement_status).state != ph_status) {
             id(ph_measurement_status).publish_state(ph_status);
           }
 
           const std::string ec_status = esphome::growbud::measurement_status_string(
-              id(growbud_controller).chemistry().ec_status(millis()));
+              id(growbud_controller).chemistry().ec_status());
           if (!id(ec_measurement_status).has_state() ||
               id(ec_measurement_status).state != ec_status) {
             id(ec_measurement_status).publish_state(ec_status);
@@ -736,10 +733,37 @@ script:
       - lambda: |-
           id(growbud_controller).reservoir().measurement_requested();
       - component.update: reservoir_raw_distance
-  - id: ${id_prefix}_post_pump_reservoir
+  - id: ${id_prefix}_chemistry_result_timeout
+    mode: restart
+    then:
+      - delay: ${chemistry_read_timeout}
+      - lambda: |-
+          auto &chemistry = id(growbud_controller).chemistry();
+          if (chemistry.ph_measurement_pending()) chemistry.mark_ph_failed();
+          if (chemistry.ec_measurement_pending()) chemistry.mark_ec_failed();
+      - script.execute: ${id_prefix}_publish_chemistry_status
+  - id: ${id_prefix}_read_ph
+    mode: restart
+    then:
+      - lambda: |-
+          id(growbud_controller).chemistry().ph_measurement_requested();
+      - component.update: ph_ezo
+      - script.execute: ${id_prefix}_chemistry_result_timeout
+  - id: ${id_prefix}_read_chemistry
+    mode: restart
+    then:
+      - lambda: |-
+          auto &chemistry = id(growbud_controller).chemistry();
+          chemistry.ph_measurement_requested();
+          chemistry.ec_measurement_requested();
+      - component.update: ph_ezo
+      - component.update: ec_ezo
+      - script.execute: ${id_prefix}_chemistry_result_timeout
+  - id: ${id_prefix}_post_irrigation_measurements
     mode: restart
     then:
       - delay: ${reservoir_settling_delay}
+      - script.execute: ${id_prefix}_read_chemistry
       - script.execute: ${id_prefix}_read_reservoir
   - id: ${id_prefix}_complete_pump_run
     mode: restart
@@ -748,8 +772,7 @@ script:
       - lambda: |-
           id(growbud_controller).pump().complete();
           ESP_LOGI("pump", "Pump turned off after bounded run.");
-      - component.update: ph_ezo
-      - script.execute: ${id_prefix}_post_pump_reservoir
+      - script.execute: ${id_prefix}_post_irrigation_measurements
   - id: ${id_prefix}_run_pump
     mode: single
     parameters:

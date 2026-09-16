@@ -70,19 +70,32 @@ void test_grow_cycle() {
 
 void test_chemistry() {
   ChemistryState chemistry;
-  assert(chemistry.ph_status(0) == MeasurementStatus::UNAVAILABLE);
-  assert(chemistry.ec_status(0) == MeasurementStatus::UNAVAILABLE);
-  assert(chemistry.record_ph(6.25f, 1000));
-  assert(chemistry.record_ec(1450.0f, 2000));
-  assert(chemistry.ph_status(181000) == MeasurementStatus::VALID);
-  assert(chemistry.ph_status(181001) == MeasurementStatus::STALE);
-  assert(chemistry.ec_status(182001) == MeasurementStatus::STALE);
-  assert(chemistry.record_ph(6.3f, 200000));
-  assert(chemistry.ph_status(200001) == MeasurementStatus::VALID);
-  assert(!chemistry.record_ec(NAN, 200000));
-  assert(chemistry.ec_status(200001) == MeasurementStatus::UNAVAILABLE);
-  assert(chemistry.record_ec(1451.0f, 200002));
-  assert(chemistry.ec_status(200003) == MeasurementStatus::VALID);
+  assert(chemistry.ph_status() == MeasurementStatus::UNAVAILABLE);
+  assert(chemistry.ec_status() == MeasurementStatus::UNAVAILABLE);
+  chemistry.ph_measurement_requested();
+  chemistry.ec_measurement_requested();
+  chemistry.mark_ph_failed();
+  chemistry.mark_ec_failed();
+  assert(chemistry.ph_status() == MeasurementStatus::UNAVAILABLE);
+  assert(chemistry.ec_status() == MeasurementStatus::UNAVAILABLE);
+  chemistry.ph_measurement_requested();
+  chemistry.ec_measurement_requested();
+  assert(chemistry.record_ph(6.25f));
+  assert(chemistry.record_ec(1450.0f));
+  assert(chemistry.ph_status() == MeasurementStatus::VALID);
+  assert(chemistry.ec_status() == MeasurementStatus::VALID);
+  assert(!chemistry.ph_measurement_pending());
+  assert(!chemistry.ec_measurement_pending());
+  chemistry.mark_ph_failed();
+  chemistry.mark_ec_failed();
+  assert(chemistry.ph_status() == MeasurementStatus::STALE);
+  assert(chemistry.ec_status() == MeasurementStatus::STALE);
+  assert(chemistry.record_ph(6.3f));
+  assert(chemistry.record_ec(1451.0f));
+  assert(chemistry.ph_status() == MeasurementStatus::VALID);
+  assert(chemistry.ec_status() == MeasurementStatus::VALID);
+  assert(!chemistry.record_ec(NAN));
+  assert(chemistry.ec_status() == MeasurementStatus::STALE);
 }
 
 void test_irrigation_and_pump() {

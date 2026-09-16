@@ -4,44 +4,44 @@
 
 namespace esphome::growbud {
 
-bool ChemistryState::record_ph(float value, uint32_t now_ms) {
+bool ChemistryState::record_ph(float value) {
+  this->ph_pending_ = false;
   if (!std::isfinite(value)) {
     this->ph_failed_ = true;
     return false;
   }
   this->last_ph_ = value;
-  this->ph_last_success_ms_ = now_ms;
   this->ph_valid_ = true;
   this->ph_failed_ = false;
   return true;
 }
 
-bool ChemistryState::record_ec(float value, uint32_t now_ms) {
+bool ChemistryState::record_ec(float value) {
+  this->ec_pending_ = false;
   if (!std::isfinite(value)) {
     this->ec_failed_ = true;
     return false;
   }
   this->last_ec_ = value;
-  this->ec_last_success_ms_ = now_ms;
   this->ec_valid_ = true;
   this->ec_failed_ = false;
   return true;
 }
 
-MeasurementStatus ChemistryState::status_(bool valid, bool failed, uint32_t last_success_ms, uint32_t now_ms) {
-  if (!valid || failed)
+MeasurementStatus ChemistryState::status_(bool valid, bool failed) {
+  if (!valid)
     return MeasurementStatus::UNAVAILABLE;
-  if (static_cast<uint32_t>(now_ms - last_success_ms) > CHEMISTRY_FRESHNESS_MS)
+  if (failed)
     return MeasurementStatus::STALE;
   return MeasurementStatus::VALID;
 }
 
-MeasurementStatus ChemistryState::ph_status(uint32_t now_ms) const {
-  return status_(this->ph_valid_, this->ph_failed_, this->ph_last_success_ms_, now_ms);
+MeasurementStatus ChemistryState::ph_status() const {
+  return status_(this->ph_valid_, this->ph_failed_);
 }
 
-MeasurementStatus ChemistryState::ec_status(uint32_t now_ms) const {
-  return status_(this->ec_valid_, this->ec_failed_, this->ec_last_success_ms_, now_ms);
+MeasurementStatus ChemistryState::ec_status() const {
+  return status_(this->ec_valid_, this->ec_failed_);
 }
 
 bool ReservoirState::record_distance(float distance_cm) {

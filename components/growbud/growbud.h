@@ -8,7 +8,6 @@
 
 namespace esphome::growbud {
 
-constexpr uint32_t CHEMISTRY_FRESHNESS_MS = 180000U;
 constexpr float RESERVOIR_MIN_DISTANCE_CM = 2.0f;
 constexpr float RESERVOIR_MAX_DISTANCE_CM = 200.0f;
 
@@ -33,25 +32,29 @@ struct IrrigationEvaluation {
 
 class ChemistryState {
  public:
-  bool record_ph(float value, uint32_t now_ms);
-  bool record_ec(float value, uint32_t now_ms);
-  void mark_ph_failed() { this->ph_failed_ = true; }
-  void mark_ec_failed() { this->ec_failed_ = true; }
-  MeasurementStatus ph_status(uint32_t now_ms) const;
-  MeasurementStatus ec_status(uint32_t now_ms) const;
+  void ph_measurement_requested() { this->ph_pending_ = true; }
+  void ec_measurement_requested() { this->ec_pending_ = true; }
+  bool record_ph(float value);
+  bool record_ec(float value);
+  void mark_ph_failed() { this->ph_pending_ = false; this->ph_failed_ = true; }
+  void mark_ec_failed() { this->ec_pending_ = false; this->ec_failed_ = true; }
+  MeasurementStatus ph_status() const;
+  MeasurementStatus ec_status() const;
+  bool ph_measurement_pending() const { return this->ph_pending_; }
+  bool ec_measurement_pending() const { return this->ec_pending_; }
   bool has_valid_ph() const { return this->ph_valid_; }
   float last_ph() const { return this->last_ph_; }
 
  protected:
-  static MeasurementStatus status_(bool valid, bool failed, uint32_t last_success_ms, uint32_t now_ms);
+  static MeasurementStatus status_(bool valid, bool failed);
   float last_ph_{0.0f};
   float last_ec_{0.0f};
-  uint32_t ph_last_success_ms_{0};
-  uint32_t ec_last_success_ms_{0};
   bool ph_valid_{false};
   bool ec_valid_{false};
   bool ph_failed_{false};
   bool ec_failed_{false};
+  bool ph_pending_{false};
+  bool ec_pending_{false};
 };
 
 class PumpState {

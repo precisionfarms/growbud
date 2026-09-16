@@ -78,14 +78,14 @@ class GrowBudEventReservoirTests(unittest.TestCase):
 
     def test_common_read_requests_one_native_acquisition(self):
         read = YAML.split("  - id: ${id_prefix}_read_reservoir\n", 1)[1].split(
-            "  - id: ${id_prefix}_post_pump_reservoir\n", 1
+            "  - id: ${id_prefix}_chemistry_result_timeout\n", 1
         )[0]
         self.assertIn("measurement_requested()", read)
         self.assertIn("component.update: reservoir_raw_distance", read)
 
     def test_post_pump_read_waits_for_named_settling_delay(self):
         self.assertIn("reservoir_settling_delay: 60s", YAML)
-        post = YAML.split("  - id: ${id_prefix}_post_pump_reservoir\n", 1)[1].split(
+        post = YAML.split("  - id: ${id_prefix}_post_irrigation_measurements\n", 1)[1].split(
             "  - id: ${id_prefix}_complete_pump_run\n", 1
         )[0]
         self.assertLess(
@@ -100,11 +100,11 @@ class GrowBudEventReservoirTests(unittest.TestCase):
         )[0]
         self.assertLess(
             completion.index("switch.turn_off: ${id_prefix}_pump_switch"),
-            completion.index("script.execute: ${id_prefix}_post_pump_reservoir"),
+            completion.index("script.execute: ${id_prefix}_post_irrigation_measurements"),
         )
         self.assertLess(
             completion.index("pump().complete()"),
-            completion.index("script.execute: ${id_prefix}_post_pump_reservoir"),
+            completion.index("script.execute: ${id_prefix}_post_irrigation_measurements"),
         )
 
     def test_failure_preserves_value_and_drives_event_stale_semantics(self):
