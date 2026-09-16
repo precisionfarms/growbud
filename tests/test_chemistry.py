@@ -40,6 +40,13 @@ class GrowBudChemistryTests(unittest.TestCase):
         self.assertEqual(measurement_status(False, False, 0, 10_000), "Unavailable")
         self.assertEqual(measurement_status(True, True, 9_000, 10_000), "Unavailable")
 
+    def test_last_stored_ph_is_unavailable_before_first_valid_measurement(self):
+        source = (Path(__file__).parents[1] / "growbud.yaml").read_text()
+        last_ph = source.split('id: last_stored_ph_sensor', 1)[1]
+        last_ph = last_ph.split('text_sensor:', 1)[0]
+        self.assertIn("if (!id(ph_has_valid_reading)) return NAN;", last_ph)
+        self.assertNotIn("value_or(0.0)", last_ph)
+
     def test_malformed_ec_response_never_becomes_zero(self):
         last_valid = (1450.5, 725.2, 0.71, 1.001)
         parsed = parse_ec_response("not-a-number,725.2,0.71,1.001")
