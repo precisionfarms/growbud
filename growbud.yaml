@@ -75,6 +75,21 @@ switch:
     inverted: true
     internal: true
     restore_mode: ALWAYS_OFF
+  - platform: template
+    name: Pump
+    id: ${id_prefix}_manual_pump_switch
+    restore_mode: DISABLED
+    lambda: |-
+      return id(${id_prefix}_pump_switch).state;
+    turn_on_action:
+      - lambda: |-
+          id(${id_prefix}_run_pump).execute(static_cast<int>(id(pump_duration).state));
+    turn_off_action:
+      - script.stop: ${id_prefix}_run_pump
+      - switch.turn_off: ${id_prefix}_pump_switch
+      - lambda: |-
+          id(growbud_controller).pump().complete();
+      - component.update: ph_ezo
   - platform: gpio    
     pin: GPIO27
     id: ${id_prefix}_light_switch
