@@ -86,9 +86,13 @@ void test_chemistry() {
   assert(chemistry.ec_status() == MeasurementStatus::VALID);
   assert(!chemistry.ph_measurement_pending());
   assert(!chemistry.ec_measurement_pending());
+  chemistry.ph_measurement_requested();
+  assert(chemistry.ph_status() == MeasurementStatus::VALID);
+  assert(chemistry.ec_status() == MeasurementStatus::VALID);
   chemistry.mark_ph_failed();
-  chemistry.mark_ec_failed();
   assert(chemistry.ph_status() == MeasurementStatus::STALE);
+  assert(chemistry.ec_status() == MeasurementStatus::VALID);
+  chemistry.mark_ec_failed();
   assert(chemistry.ec_status() == MeasurementStatus::STALE);
   assert(chemistry.record_ph(6.3f));
   assert(chemistry.record_ec(1451.0f));
