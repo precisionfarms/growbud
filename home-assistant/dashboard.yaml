@@ -1,0 +1,312 @@
+title: GrowBud
+views:
+  - title: Overview
+    path: overview
+    icon: mdi:sprout
+    cards:
+      - type: markdown
+        content: "## Reservoir"
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: gauge
+            entity: sensor.ph
+            name: pH
+            min: 0
+            max: 14
+          - type: gauge
+            entity: sensor.tent_1_conductivity_ec
+            name: Conductivity / EC
+            min: 0
+            max: 3000
+          - type: gauge
+            entity: sensor.reservoir_level
+            name: Reservoir Level
+            min: 0
+            max: 100
+          - type: entity
+            entity: sensor.reservoir_volume
+            name: Solution Remaining
+      - type: entities
+        title: Measurement confidence
+        show_header_toggle: false
+        entities:
+          - entity: sensor.ph_measurement_status
+            name: pH Measurement Status
+          - entity: sensor.ec_measurement_status
+            name: EC Measurement Status
+          - entity: sensor.reservoir_measurement_status
+            name: Reservoir Measurement Status
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            entity: button.read_chemistry
+            name: Read Chemistry
+            icon: mdi:flask-outline
+            tap_action:
+              action: toggle
+          - type: button
+            entity: button.read_reservoir
+            name: Read Reservoir
+            icon: mdi:waves-arrow-up
+            tap_action:
+              action: toggle
+      - type: markdown
+        content: "## Irrigation"
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: switch.pump
+            name: Pump
+          - entity: sensor.next_pump_time
+            name: Next Pump Time
+          - entity: number.pump_duration_sec
+            name: Pump Duration
+          - entity: number.lights_on_pump_interval_min
+            name: Lights On Interval
+          - entity: number.lights_off_pump_interval_min
+            name: Lights Off Interval
+      - type: button
+        entity: button.run_pump
+        name: Run Pump Now
+        icon: mdi:pump
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Run the irrigation pump for the configured duration?
+      - type: markdown
+        content: "## Lighting"
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: switch.lights
+            name: Lights
+          - entity: sensor.on_time
+            name: On Time
+          - entity: sensor.off_time
+            name: Off Time
+          - entity: number.veg_light_duration
+            name: Veg Duration
+          - entity: number.bloom_light_duration
+            name: Bloom Duration
+      - type: markdown
+        content: "## Grow"
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: date.start_date
+            name: Start Date
+          - entity: sensor.bloom_date
+            name: Bloom Date
+          - entity: sensor.harvest_date
+            name: Harvest Date
+          - entity: sensor.days_blooming
+            name: Days Blooming
+
+  - title: Reservoir
+    path: reservoir
+    icon: mdi:water
+    cards:
+      - type: entities
+        title: Current measurements
+        show_header_toggle: false
+        entities:
+          - entity: sensor.ph
+            name: pH
+          - entity: sensor.ph_measurement_status
+            name: pH Measurement Status
+          - entity: sensor.tent_1_conductivity_ec
+            name: Conductivity / EC
+          - entity: sensor.ec_measurement_status
+            name: EC Measurement Status
+          - entity: sensor.reservoir_level
+            name: Reservoir Level
+          - entity: sensor.reservoir_volume
+            name: Reservoir Volume
+          - entity: sensor.reservoir_measurement_status
+            name: Reservoir Measurement Status
+          - entity: sensor.reservoir_distance
+            name: Filtered Reservoir Distance
+          - entity: sensor.reservoir_raw_distance
+            name: Raw Reservoir Distance
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            entity: button.read_chemistry
+            name: Read Chemistry
+            tap_action:
+              action: toggle
+          - type: button
+            entity: button.read_reservoir
+            name: Read Reservoir
+            tap_action:
+              action: toggle
+      - type: history-graph
+        title: Chemistry history
+        hours_to_show: 24
+        entities:
+          - entity: sensor.ph
+            name: pH
+          - entity: sensor.tent_1_conductivity_ec
+            name: EC
+      - type: history-graph
+        title: Reservoir history
+        hours_to_show: 24
+        entities:
+          - entity: sensor.reservoir_level
+            name: Level
+          - entity: sensor.reservoir_volume
+            name: Volume
+      - type: entities
+        title: Reservoir configuration
+        show_header_toggle: false
+        entities:
+          - entity: number.reservoir_full_distance
+          - entity: number.reservoir_empty_distance
+          - entity: number.reservoir_capacity
+
+  - title: Irrigation
+    path: irrigation
+    icon: mdi:pump
+    cards:
+      - type: entities
+        title: Irrigation status
+        show_header_toggle: false
+        entities:
+          - entity: switch.pump
+            name: Pump
+          - entity: sensor.next_pump_time
+            name: Next Pump Time
+      - type: button
+        entity: button.run_pump
+        name: Run Pump Now
+        icon: mdi:pump
+        show_state: true
+        tap_action:
+          action: toggle
+          confirmation:
+            text: Run the irrigation pump for the configured duration?
+      - type: entities
+        title: Irrigation configuration
+        show_header_toggle: false
+        entities:
+          - entity: number.pump_duration_sec
+          - entity: number.lights_on_pump_interval_min
+          - entity: number.lights_off_pump_interval_min
+
+  - title: Lighting
+    path: lighting
+    icon: mdi:lightbulb-on-outline
+    cards:
+      - type: entities
+        title: Lighting status and schedule
+        show_header_toggle: false
+        entities:
+          - entity: switch.lights
+            name: Lights
+          - entity: sensor.on_time
+            name: Calculated On Time
+          - entity: sensor.off_time
+            name: Calculated Off Time
+      - type: entities
+        title: Lighting configuration
+        show_header_toggle: false
+        entities:
+          - entity: select.lights_on_time
+            name: Veg Lights On Time
+          - entity: select.bloom_lights_on_time
+          - entity: number.veg_light_duration
+          - entity: number.bloom_light_duration
+
+  - title: Grow
+    path: grow
+    icon: mdi:flower
+    cards:
+      - type: entities
+        title: Current grow information
+        show_header_toggle: false
+        entities:
+          - entity: date.start_date
+          - entity: sensor.bloom_date
+          - entity: sensor.harvest_date
+          - entity: sensor.days_blooming
+      - type: entities
+        title: Grow configuration
+        show_header_toggle: false
+        entities:
+          - entity: number.days_in_veg
+          - entity: number.days_in_bloom
+          - entity: number.veg_transition
+          - entity: number.bloom_transition
+          - entity: number.ph_target
+
+  - title: Maintenance
+    path: maintenance
+    icon: mdi:tools
+    cards:
+      - type: grid
+        title: Calibration
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            entity: button.calibrate_ph_mid
+            name: Calibrate pH Mid (7.00)
+            tap_action:
+              action: toggle
+              confirmation:
+                text: Calibrate the pH probe at 7.00 now?
+          - type: button
+            entity: button.calibrate_ph_high
+            name: Calibrate pH High (10.00)
+            tap_action:
+              action: toggle
+              confirmation:
+                text: Calibrate the pH probe at 10.00 now?
+      - type: entities
+        title: Chemistry diagnostics
+        show_header_toggle: false
+        entities:
+          - entity: button.read_ph
+          - entity: button.read_conductivity
+          - entity: sensor.ezo_ec_response
+          - entity: sensor.last_stored_ph
+          - entity: sensor.tds
+          - entity: sensor.salinity
+          - entity: sensor.specific_gravity
+      - type: markdown
+        content: >-
+          ## Developer / protocol diagnostics
+          These commands can change sensor communications. Use only during
+          bench service with physical access to the controller.
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: button
+            entity: button.uart_to_i2c
+            name: UART to I2C
+            icon: mdi:serial-port
+            tap_action:
+              action: toggle
+              confirmation:
+                text: Send the UART-to-I2C protocol command?
+          - type: button
+            entity: button.i2c
+            name: Set I2C Baud
+            icon: mdi:chip
+            tap_action:
+              action: toggle
+              confirmation:
+                text: Send the I2C baud command?
+      - type: entities
+        title: Raw reservoir diagnostics
+        show_header_toggle: false
+        entities:
+          - entity: sensor.reservoir_raw_distance
+          - entity: sensor.reservoir_distance
