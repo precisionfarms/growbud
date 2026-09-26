@@ -84,7 +84,7 @@ globals:
 switch:
   - platform: gpio
     pin: GPIO26
-    name: Pump
+    name: "Internal Pump Relay"
     id: ${id_prefix}_pump_switch
     inverted: true
     internal: true
