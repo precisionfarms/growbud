@@ -23,8 +23,14 @@ class GrowBudManualPumpSwitchTests(unittest.TestCase):
 
     def test_physical_relay_remains_internal_and_restore_off(self):
         self.assertIn("pin: GPIO26", self.gpio)
+        self.assertIn('name: "Internal Pump Relay"', self.gpio)
+        self.assertNotIn("name: Pump", self.gpio)
         self.assertIn("internal: true", self.gpio)
         self.assertIn("restore_mode: ALWAYS_OFF", self.gpio)
+
+    def test_internal_relay_and_home_assistant_switch_have_distinct_names(self):
+        self.assertIn('name: "Internal Pump Relay"', self.gpio)
+        self.assertIn("name: Pump", self.manual)
 
     def test_manual_on_uses_only_the_guarded_run_script(self):
         self.assertIn("name: Pump", self.manual)
@@ -36,11 +42,35 @@ class GrowBudManualPumpSwitchTests(unittest.TestCase):
         self.assertNotIn("switch.turn_on", on_action)
 
     def test_state_tracks_the_physical_relay(self):
+        self.assertIn("on_turn_on:", self.gpio)
         self.assertIn(
-            "return id(${id_prefix}_pump_switch).state;", self.manual
+            "id(${id_prefix}_manual_pump_switch).publish_state(true);", self.gpio
         )
+        self.assertIn("on_turn_off:", self.gpio)
+        self.assertIn(
+            "id(${id_prefix}_manual_pump_switch).publish_state(false);", self.gpio
+        )
+        self.assertNotIn("lambda:", self.manual.split("turn_on_action:", 1)[0])
         self.assertNotIn("optimistic: true", self.manual)
         self.assertIn("restore_mode: DISABLED", self.manual)
+
+    def test_manual_state_follows_bounded_run_until_timeout_or_manual_off(self):
+        run = SOURCE.split("  - id: ${id_prefix}_run_pump\n", 1)[1].split(
+            "  - id: ${id_prefix}_script2\n", 1
+        )[0]
+        self.assertLess(run.index("pump().begin"), run.index("pump_switch).turn_on"))
+        self.assertLess(run.index("pump_switch).turn_on"), run.index("delay: !lambda"))
+        self.assertLess(
+            run.index("delay: !lambda"),
+            run.index("script.execute: ${id_prefix}_complete_pump_run"),
+        )
+        self.assertIn("return id(growbud_controller).pump().maximum_runtime_ms();", run)
+
+        off_action = self.manual.split("turn_off_action:", 1)[1]
+        self.assertLess(
+            off_action.index("script.stop: ${id_prefix}_run_pump"),
+            off_action.index("script.execute: ${id_prefix}_complete_pump_run"),
+        )
 
     def test_manual_off_stops_and_synchronizes_the_guarded_run(self):
         off_action = self.manual.split("turn_off_action:", 1)[1]
