@@ -61,6 +61,8 @@ views:
         entities:
           - entity: switch.pump
             name: Pump
+          - entity: switch.automate
+            name: Automate
           - entity: sensor.next_pump_time
             name: Next Pump Time
           - entity: number.pump_duration_sec
@@ -180,6 +182,8 @@ views:
         entities:
           - entity: switch.pump
             name: Pump
+          - entity: switch.automate
+            name: Automate
           - entity: sensor.next_pump_time
             name: Next Pump Time
       - type: button

@@ -48,6 +48,12 @@ lovelace:
 Restart Home Assistant or reload dashboards after validating the main
 configuration.
 
+For reservoir maintenance, turn **Automate** off before turning **Pump** on.
+Scheduled irrigation pauses, Pump can run manually, and either switch can end
+the run immediately. After 15 minutes Automate turns back on and stops any
+remaining manual run. The controller also retains an independent local
+watchdog, so this behavior does not depend on Home Assistant or Wi-Fi.
+
 ## Source-to-dashboard inventory
 
 | Dashboard concept | Exposed name in `growbud.yaml` | Default HA entity ID | Used in |
@@ -64,6 +70,7 @@ configuration.
 | Read chemistry | Read Chemistry | `button.read_chemistry` | Overview, Reservoir |
 | Read reservoir | Read Reservoir | `button.read_reservoir` | Overview, Reservoir |
 | Safe pump | Pump (template switch) | `switch.pump` | Overview, Irrigation |
+| Irrigation automation | Automate | `switch.automate` | Overview, Irrigation |
 | Next pump time | Next Pump Time | `sensor.next_pump_time` | Overview, Irrigation |
 | Pump duration | Pump Duration (sec) | `number.pump_duration_sec` | Overview, Irrigation |
 | On interval | Lights On Pump Interval (min) | `number.lights_on_pump_interval_min` | Overview, Irrigation |

@@ -129,6 +129,15 @@ bool PumpState::begin(int requested_seconds, uint32_t now_ms) {
   return true;
 }
 
+bool PumpState::begin_maintenance(uint32_t now_ms) {
+  if (this->active_)
+    return false;
+  this->started_ms_ = now_ms;
+  this->maximum_runtime_ms_ = MAINTENANCE_RUNTIME_MS;
+  this->active_ = true;
+  return true;
+}
+
 bool PumpState::watchdog_should_stop(bool relay_on, uint32_t now_ms) {
   if (!relay_on) {
     this->active_ = false;

@@ -60,10 +60,14 @@ class ChemistryState {
 class PumpState {
  public:
   bool begin(int requested_seconds, uint32_t now_ms);
+  bool begin_maintenance(uint32_t now_ms);
   void complete() { this->active_ = false; }
   bool watchdog_should_stop(bool relay_on, uint32_t now_ms);
   uint32_t maximum_runtime_ms() const { return this->maximum_runtime_ms_; }
   static int bounded_duration_seconds(int requested_seconds);
+  // Normal maintenance completion runs at 15 minutes. The extra second keeps
+  // the independent watchdog from racing that expected completion.
+  static constexpr uint32_t MAINTENANCE_RUNTIME_MS = (15U * 60U + 1U) * 1000U;
 
  protected:
   bool active_{false};

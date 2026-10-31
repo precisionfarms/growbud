@@ -18,6 +18,9 @@ class GrowBudManualPumpSwitchTests(unittest.TestCase):
             "- platform: template", 1
         )[0]
         self.manual = switch_section.split("- platform: template", 1)[1].split(
+            "- platform: template", 1
+        )[0]
+        self.automate = switch_section.split("- platform: template", 2)[2].split(
             "- platform: gpio", 1
         )[0]
 
@@ -35,11 +38,35 @@ class GrowBudManualPumpSwitchTests(unittest.TestCase):
     def test_manual_on_uses_only_the_guarded_run_script(self):
         self.assertIn("name: Pump", self.manual)
         self.assertIn("${id_prefix}_run_pump).execute", self.manual)
+        self.assertIn("script.execute: ${id_prefix}_run_maintenance_pump", self.manual)
         on_action = self.manual.split("turn_on_action:", 1)[1].split(
             "turn_off_action:", 1
         )[0]
         self.assertNotIn("pump_switch).turn_on", on_action)
         self.assertNotIn("switch.turn_on", on_action)
+
+    def test_automation_pause_has_a_local_fifteen_minute_limit(self):
+        self.assertIn("name: Automate", self.automate)
+        self.assertIn("restore_mode: ALWAYS_ON", self.automate)
+        self.assertIn("script.execute: ${id_prefix}_resume_automation", self.automate)
+
+        maintenance = SOURCE.split(
+            "  - id: ${id_prefix}_run_maintenance_pump\n", 1
+        )[1].split("  - id: ${id_prefix}_resume_automation\n", 1)[0]
+        self.assertIn("pump().begin_maintenance(millis())", maintenance)
+        self.assertIn("pump_switch).turn_on()", maintenance)
+        self.assertIn("delay: 15min", maintenance)
+
+        resume = SOURCE.split("  - id: ${id_prefix}_resume_automation\n", 1)[1].split(
+            "  - id: ${id_prefix}_script2\n", 1
+        )[0]
+        self.assertIn("delay: 15min", resume)
+        self.assertIn("switch.turn_on: ${id_prefix}_automate_switch", resume)
+
+        scheduler = SOURCE.split("  - id: ${id_prefix}_pump_script\n", 1)[1].split(
+            "  - id: ${id_prefix}_lights_script\n", 1
+        )[0]
+        self.assertIn("if (!id(${id_prefix}_automate_switch).state)", scheduler)
 
     def test_state_tracks_the_physical_relay(self):
         self.assertIn("on_turn_on:", self.gpio)

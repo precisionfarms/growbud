@@ -122,6 +122,10 @@ void test_irrigation_and_pump() {
   assert(!pump.begin(60, 1001));
   assert(!pump.watchdog_should_stop(true, 60999));
   assert(pump.watchdog_should_stop(true, 61000));
+  assert(pump.begin_maintenance(62000));
+  assert(pump.maximum_runtime_ms() == (15U * 60U + 1U) * 1000U);
+  assert(!pump.watchdog_should_stop(true, 962999));
+  assert(pump.watchdog_should_stop(true, 963000));
   assert(pump.begin(60, UINT32_MAX - 1000));
   assert(!pump.watchdog_should_stop(true, 58000));
   assert(pump.watchdog_should_stop(true, 59000));

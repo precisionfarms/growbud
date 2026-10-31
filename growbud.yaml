@@ -100,15 +100,38 @@ switch:
     id: ${id_prefix}_manual_pump_switch
     restore_mode: DISABLED
     turn_on_action:
-      - lambda: |-
-          id(${id_prefix}_run_pump).execute(static_cast<int>(id(pump_duration).state));
+      - if:
+          condition:
+            switch.is_on: ${id_prefix}_automate_switch
+          then:
+            - lambda: |-
+                id(${id_prefix}_run_pump).execute(static_cast<int>(id(pump_duration).state));
+          else:
+            - script.execute: ${id_prefix}_run_maintenance_pump
     turn_off_action:
       - if:
           condition:
             switch.is_on: ${id_prefix}_pump_switch
           then:
             - script.stop: ${id_prefix}_run_pump
+            - script.stop: ${id_prefix}_run_maintenance_pump
             - script.execute: ${id_prefix}_complete_pump_run
+  - platform: template
+    name: Automate
+    id: ${id_prefix}_automate_switch
+    optimistic: true
+    restore_mode: ALWAYS_ON
+    turn_on_action:
+      - script.stop: ${id_prefix}_resume_automation
+      - if:
+          condition:
+            switch.is_on: ${id_prefix}_pump_switch
+          then:
+            - script.stop: ${id_prefix}_run_pump
+            - script.stop: ${id_prefix}_run_maintenance_pump
+            - script.execute: ${id_prefix}_complete_pump_run
+    turn_off_action:
+      - script.execute: ${id_prefix}_resume_automation
   - platform: gpio    
     pin: GPIO27
     id: ${id_prefix}_light_switch
@@ -317,6 +340,7 @@ interval:
                 tag: pump
                 format: "Pump maximum runtime exceeded; forcing pump off."
             - script.stop: ${id_prefix}_run_pump
+            - script.stop: ${id_prefix}_run_maintenance_pump
             - script.execute: ${id_prefix}_complete_pump_run
   - interval: 30min    
     startup_delay: 
@@ -791,6 +815,20 @@ script:
       - delay: !lambda |-
           return id(growbud_controller).pump().maximum_runtime_ms();
       - script.execute: ${id_prefix}_complete_pump_run
+  - id: ${id_prefix}_run_maintenance_pump
+    mode: single
+    then:
+      - lambda: |-
+          if (!id(growbud_controller).pump().begin_maintenance(millis())) return;
+          id(${id_prefix}_pump_switch).turn_on();
+          ESP_LOGI("pump", "Maintenance pump run started; local 15-minute safety limit active.");
+      - delay: 15min
+      - script.execute: ${id_prefix}_complete_pump_run
+  - id: ${id_prefix}_resume_automation
+    mode: restart
+    then:
+      - delay: 15min
+      - switch.turn_on: ${id_prefix}_automate_switch
   - id: ${id_prefix}_script2
     then:
       lambda: !lambda |-
@@ -801,6 +839,10 @@ script:
   - id: ${id_prefix}_pump_script
     then:
       lambda: !lambda |-
+        if (!id(${id_prefix}_automate_switch).state) {
+          ESP_LOGI("pump", "Automatic irrigation paused for reservoir maintenance.");
+          return;
+        }
         auto now = id(growbud_time).now();
         if (!now.is_valid()) {
           ESP_LOGW("pump", "Time is invalid; skipping scheduled irrigation evaluation.");
